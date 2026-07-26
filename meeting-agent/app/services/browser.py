@@ -46,7 +46,7 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 _JOIN_TIMEOUT_MS = 20_000
-_SESSION_FILE = "/app/google_auth.json"  # path inside Docker container
+_SESSION_FILE = "/app/google_session.json"  # path inside Docker container
 
 
 async def launch_browser(bot_name: str) -> tuple[Browser, BrowserContext, Page]:
@@ -64,7 +64,7 @@ async def launch_browser(bot_name: str) -> tuple[Browser, BrowserContext, Page]:
     )
 
     common_ctx = dict(
-        permissions=[],
+        permissions=["camera", "microphone"],
         geolocation=None,
         user_agent=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -75,14 +75,25 @@ async def launch_browser(bot_name: str) -> tuple[Browser, BrowserContext, Page]:
         locale="en-US",
     )
 
-    # Load saved Google session if it exists (created by save_google_session.py)
+    # --- CLOUD DEPLOYMENT SUPPORT: Build json from Base64 ENV if provided ---
+    session_b64 = os.environ.get("GOOGLE_SESSION_B64")
+    if session_b64 and not os.path.exists(_SESSION_FILE):
+        import base64
+        try:
+            with open(_SESSION_FILE, "wb") as f:
+                f.write(base64.b64decode(session_b64))
+            logger.info("Successfully decoded Google Session from Environment Variable!")
+        except Exception:
+            logger.exception("Failed to decode GOOGLE_SESSION_B64.")
+
+    # Load saved Google session if it exists
     if os.path.exists(_SESSION_FILE):
         logger.info("Loading saved Google session from %s", _SESSION_FILE)
         context = await browser.new_context(storage_state=_SESSION_FILE, **common_ctx)
     else:
         logger.warning(
-            "No saved Google session found at %s. "
-            "Run save_google_session.py locally to create one.",
+            "No Google session found at %s. "
+            "Click 'Connect Bot Account' on the dashboard or run: python save_google_session.py",
             _SESSION_FILE,
         )
         context = await browser.new_context(**common_ctx)
@@ -175,10 +186,24 @@ async def _join_google_meet(page: Page, meeting_url: str) -> bool:
         # Wait for Meet's JS to finish rendering the pre-join screen
         await page.wait_for_timeout(3000)
 
-        # If session loaded but Meet still shows guest name field, fill it
-        name_input = page.locator('input[type="text"][aria-label*="name" i]')
-        if await name_input.count() > 0 and await name_input.first.is_visible():
-            await name_input.first.fill(getattr(page, "_bot_name", "Meeting Notes Bot"))
+        # Dismiss any "Got it" tracking/permission toasts that intercept clicks
+        try:
+            got_it = page.locator('button:has-text("Got it"), button:has-text("Dismiss")')
+            if await got_it.count() > 0:
+                await got_it.first.click(timeout=3000)
+        except Exception:
+            pass
+
+        # Ensure we always type the name if requested, and explicitly blur to trigger React state
+        name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i]')
+        if await name_input.count() > 0:
+            try:
+                await name_input.first.wait_for(state="visible", timeout=5000)
+                await name_input.first.fill("Meeting Notes Bot")
+                await name_input.first.press("Tab") # Trigger blur to definitively enable the Join button
+                await page.wait_for_timeout(500)
+            except Exception:
+                pass
 
         # Mute mic/camera toggles before asking to join, if present.
         for label in ["Turn off microphone", "Turn off camera"]:
@@ -197,6 +222,13 @@ async def _join_google_meet(page: Page, meeting_url: str) -> bool:
         await page.locator('[aria-label*="Leave call" i]').first.wait_for(timeout=60_000)
         return True
     except Exception:
+        await page.screenshot(path='/app/meet_join_failed.png')
+        try:
+            html = await page.content()
+            with open("/app/meet_join_failed.html", "w", encoding="utf-8") as f:
+                f.write(html)
+        except Exception:
+            pass
         logger.exception("Failed to join Google Meet at %s", meeting_url)
         return False
 

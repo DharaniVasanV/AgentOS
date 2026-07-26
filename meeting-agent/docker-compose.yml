@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: vasan5707
       POSTGRES_DB: meeting_agent
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,14 +18,16 @@ services:
   meeting-agent:
     build: .
     env_file: .env
+    environment:
+      - TZ=Asia/Kolkata
     ports:
       - "8000:8000"
+    volumes:
+      - ./google_session.json:/app/google_session.json:ro
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    volumes:
-      - ./google_auth.json:/app/google_auth.json:ro
 
 volumes:
   pgdata:

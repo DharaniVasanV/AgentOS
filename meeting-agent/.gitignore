@@ -3,6 +3,7 @@
 
 # Google Bot Authentication (CRITICAL: Do not commit these!)
 google_auth.json
+google_session.json
 chrome_bot_profile/
 
 # Virtual Environment

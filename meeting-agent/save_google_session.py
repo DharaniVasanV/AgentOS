@@ -2,110 +2,94 @@
 save_google_session.py
 ======================
 Run this ONCE on your local machine (not in Docker) to sign in to
-Google manually and save the session cookies.
+Google manually and save the session cookies for the Meeting Agent bot.
+
+Can be triggered from the dashboard's "Connect Bot Account" button
+or run manually: python save_google_session.py
 
 How it works:
-  1. Opens a REAL Chrome window (no Playwright automation flags at all)
-  2. You sign in to your bot Gmail account manually
-  3. You close Chrome and press ENTER
-  4. The script opens that same Chrome profile via Playwright to export cookies
-  5. Saves google_auth.json for the Docker container to use
-
-Usage:
-    python save_google_session.py
+  1. Launches a visible Playwright Chromium browser
+  2. You sign in to your Google account manually
+  3. After sign-in, press ENTER in the terminal
+  4. The script saves the browser cookies as google_session.json
+  5. The Docker container mounts this file for Google Meet access
 """
 
 import asyncio
-import os
-import subprocess
 import sys
+import os
 
-SESSION_FILE = "google_auth.json"
-
-# Chrome locations to try on Windows
-CHROME_PATHS = [
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-]
-
-# We use a SEPARATE, clean profile dir so we don't touch your personal Chrome
-BOT_PROFILE_DIR = os.path.abspath("chrome_bot_profile")
+SESSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "google_session.json")
 
 
-def find_chrome():
-    for path in CHROME_PATHS:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def open_chrome_for_signin():
-    chrome = find_chrome()
-    if not chrome:
-        print("❌ Chrome not found. Please install Google Chrome and try again.")
+async def run_session_saver():
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        print("❌ Playwright is not installed. Run: pip install playwright && playwright install chromium")
         sys.exit(1)
 
-    print(f"\n✅ Found Chrome at: {chrome}")
-    print(f"   Using a clean bot profile at: {BOT_PROFILE_DIR}")
-    print("\n👉 A Chrome window is opening...")
-    print("   Sign in to your bot Gmail account (agentos.meetbot@gmail.com)")
-    print("   Complete any verification Google asks for.")
-    print("   ⚠️  Do NOT close Chrome — come back here when signed in.\n")
-
-    # Launch Chrome with a dedicated profile dir, NO automation flags
-    proc = subprocess.Popen([
-        chrome,
-        f"--user-data-dir={BOT_PROFILE_DIR}",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "https://accounts.google.com/signin",
-    ])
-    return proc
-
-
-async def export_session():
-    from playwright.async_api import async_playwright
-
-    print("\n📦 Exporting session cookies from bot Chrome profile...")
-
-    async with async_playwright() as p:
-        # Open the bot profile non-headless so we can check it's signed in
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=BOT_PROFILE_DIR,
-            channel="chrome",
-            headless=True,
-            args=["--no-first-run", "--no-default-browser-check"],
-        )
-        # Navigate to Google to ensure cookies are fresh
-        page = context.pages[0] if context.pages else await context.new_page()
-        await page.goto("https://myaccount.google.com/", wait_until="domcontentloaded", timeout=15000)
-
-        await context.storage_state(path=SESSION_FILE)
-        await context.close()
-
-    print(f"\n✅ Session saved to '{SESSION_FILE}'")
-    print("   Now rebuild Docker:")
-    print("   docker compose up --build -d")
-
-
-def main():
     print("=" * 55)
     print("  Google Session Saver for Meeting Agent Bot")
     print("=" * 55)
+    print()
+    print("📌 A browser window will open now.")
+    print("   1. Sign in to your Google account")
+    print("   2. Make sure you see your profile picture in the top-right")
+    print("   3. Come back here and press ENTER")
+    print()
 
-    proc = open_chrome_for_signin()
-    input("   Press ENTER here once you are fully signed in to Google...\n")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=False,
+            args=[
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 720},
+            locale="en-US",
+        )
+        page = await context.new_page()
+        await page.goto("https://accounts.google.com/signin", wait_until="domcontentloaded")
 
-    # Kill Chrome so Playwright can open the same profile
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except Exception:
-        proc.kill()
+        # Wait for user to sign in manually via the frontend UI signal
+        print("\n   Waiting for the user to click 'Finish Sign In' on the dashboard...")
+        lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_signin_done.txt")
+        # Ensure it's clear before we start
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
+            
+        while not os.path.exists(lock_file):
+            # If the user closed the browser prematurely, gracefully exit
+            if not browser.is_connected():
+                print("❌ Browser was closed before sign-in was completed.")
+                return
+            await asyncio.sleep(1)
 
-    print("   Chrome closed. Extracting session...")
-    asyncio.run(export_session())
+        # Proceed to save cookies and clean up lock
+        try:
+            os.remove(lock_file)
+        except Exception:
+            pass
+
+        # Navigate to Google to refresh cookies
+        await page.goto("https://myaccount.google.com/", wait_until="domcontentloaded", timeout=15000)
+        await page.wait_for_timeout(2000)
+
+        # Save the storage state (cookies + localStorage)
+        await context.storage_state(path=SESSION_FILE)
+        await browser.close()
+
+    print(f"\n✅ Session saved to: {SESSION_FILE}")
+    print("   The meeting bot will now join Google Meet as your signed-in account!")
+    print("   Rebuild Docker: docker compose up --build -d")
+
+
+def main():
+    asyncio.run(run_session_saver())
 
 
 if __name__ == "__main__":

@@ -51,6 +51,8 @@ async def _call_groq_transcription(audio_path: str) -> dict:
             data = {
                 "model": settings.GROQ_WHISPER_MODEL,
                 "response_format": "verbose_json",  # gives us detected language back
+                "temperature": 0.0,
+                "prompt": "This is a recording of an English meeting. Please transcribe accurately and ignore silence.",
             }
             response = await client.post(url, headers=headers, data=data, files=files)
         response.raise_for_status()
@@ -66,7 +68,15 @@ async def transcribe_and_store(
     transcript_text = result.get("text", "").strip()
     language = result.get("language")
 
+    # Filter out common Groq Whisper silence hallucinations (e.g. "you you you", "thank you", "bye")
+    words = [w.strip(".,!?\"'") for w in transcript_text.lower().split() if w.strip(".,!?\"'")]
+    if words:
+        unique_words = set(words)
+        if len(unique_words) <= 3 and ("you" in unique_words or "bye" in unique_words):
+            logger.info("Filtered out hallucinated silence transcript: %s", transcript_text)
+            transcript_text = ""
+
     if not transcript_text:
-        logger.warning("Empty transcript returned for meeting %s", meeting_id)
+        logger.warning("Empty or silence-only transcript returned for meeting %s", meeting_id)
 
     return await crud.save_transcript(session, meeting_id, transcript_text, language)
