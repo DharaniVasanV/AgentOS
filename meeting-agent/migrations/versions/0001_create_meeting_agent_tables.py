@@ -39,8 +39,23 @@ def upgrade() -> None:
             meeting_id  VARCHAR(255),
             passcode    VARCHAR(255),
             status      VARCHAR(50),
-            updated_at  TIMESTAMP
+            updated_at  TIMESTAMP,
+            email_id    VARCHAR(255) UNIQUE,
+            organizer   VARCHAR(255),
+            description TEXT,
+            time_zone   VARCHAR(50),
+            created_at  TIMESTAMP DEFAULT now()
         )
+    """)
+
+    # Self-heal existing databases from the failed previous deploy
+    op.execute("""
+        ALTER TABLE meetings 
+        ADD COLUMN IF NOT EXISTS email_id VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS organizer VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS description TEXT,
+        ADD COLUMN IF NOT EXISTS time_zone VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT now();
     """)
 
     op.execute("""
