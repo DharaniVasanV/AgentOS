@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Meeting & Form Intelligence Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome & Google Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .glass-card:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            box-shadow: 0 8px 32px 0 rgba(99, 102, 241, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Header / Navbar -->
+    <header class="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between border-b border-slate-800">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-indigo-500/30">
+                <i class="fa-solid fa-robot"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">AI Meeting & Form Intelligence</h1>
+                <p class="text-xs text-slate-400">Autonomous Monitoring for Meetings & Circulated Forms</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <!-- Auto-Sync Toggle -->
+            <label class="flex items-center space-x-2 text-xs text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg cursor-pointer">
+                <input type="checkbox" id="auto-sync-toggle" onchange="toggleAutoSync()" class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+                <span>Auto-Sync (60s)</span>
+            </label>
+
+            <!-- Connect Gmail OAuth -->
+            <button onclick="connectGmail()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 border border-slate-700">
+                <i class="fa-brands fa-google text-red-400"></i>
+                <span>Connect Gmail</span>
+            </button>
+
+            <!-- Add Meeting/Form -->
+            <button onclick="openAddModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 shadow-lg shadow-emerald-600/20">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Item</span>
+            </button>
+
+            <!-- Sync Inbox -->
+            <button id="sync-btn" onclick="syncMeetings()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3.5 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 shadow-lg shadow-indigo-600/30">
+                <i id="sync-icon" class="fa-solid fa-rotate"></i>
+                <span>Sync Inbox</span>
+            </button>
+
+            <!-- Clear All -->
+            <button onclick="clearAllMeetings()" class="bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1">
+                <i class="fa-solid fa-trash-can"></i>
+                <span>Clear</span>
+            </button>
+
+            <div class="relative">
+                <button onclick="toggleNotifications()" class="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center relative transition border border-slate-700">
+                    <i class="fa-regular fa-bell text-base"></i>
+                    <span id="notif-badge" class="hidden absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">0</span>
+                </button>
+
+                <!-- Notifications Dropdown -->
+                <div id="notif-dropdown" class="hidden absolute right-0 mt-3 w-80 glass rounded-xl shadow-2xl py-2 border border-slate-700 z-50">
+                    <div class="px-4 py-2 border-b border-slate-800 flex justify-between items-center">
+                        <span class="font-semibold text-sm">Notifications</span>
+                        <span class="text-xs text-slate-400">Real-time alerts</span>
+                    </div>
+                    <div id="notif-list" class="max-h-64 overflow-y-auto divide-y divide-slate-800 text-xs">
+                        <div class="p-4 text-center text-slate-400">No new notifications</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+
+        <!-- Stats Overview Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="glass-card p-5 rounded-2xl flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-2xl">
+                    <i class="fa-regular fa-calendar-check"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 uppercase font-semibold">Total Meetings & Forms</div>
+                    <div id="stat-total" class="text-2xl font-bold text-white">0</div>
+                </div>
+            </div>
+
+            <div class="glass-card p-5 rounded-2xl flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-2xl">
+                    <i class="fa-solid fa-video"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 uppercase font-semibold">Platforms Detected</div>
+                    <div id="stat-platforms" class="text-2xl font-bold text-white">0</div>
+                </div>
+            </div>
+
+            <div class="glass-card p-5 rounded-2xl flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-2xl">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 uppercase font-semibold">Rescheduled</div>
+                    <div id="stat-updated" class="text-2xl font-bold text-white">0</div>
+                </div>
+            </div>
+
+            <div class="glass-card p-5 rounded-2xl flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center text-2xl">
+                    <i class="fa-solid fa-calendar-xmark"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 uppercase font-semibold">Cancelled</div>
+                    <div id="stat-cancelled" class="text-2xl font-bold text-white">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls & Search Toolbar -->
+        <div class="glass p-4 rounded-2xl flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div class="relative w-full md:w-96">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3.5 text-slate-400"></i>
+                <input type="text" id="search-input" onkeyup="filterMeetings()" placeholder="Search title, organizer, form, link..." class="w-full bg-slate-900/80 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <div class="flex flex-wrap gap-3 w-full md:w-auto">
+                <select id="platform-filter" onchange="filterMeetings()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
+                    <option value="ALL">All Platforms</option>
+                    <option value="Google Meet">Google Meet</option>
+                    <option value="Microsoft Teams">Microsoft Teams</option>
+                    <option value="Zoom">Zoom</option>
+                    <option value="Cisco Webex">Cisco Webex</option>
+                    <option value="Google Forms">Google Forms</option>
+                    <option value="Microsoft Forms">Microsoft Forms</option>
+                    <option value="Typeform">Typeform</option>
+                    <option value="Form">Forms & Surveys</option>
+                </select>
+
+                <select id="status-filter" onchange="filterMeetings()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500">
+                    <option value="ALL">All Statuses</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="updated">Updated / Rescheduled</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+
+                <!-- View Switcher -->
+                <div class="flex bg-slate-900 border border-slate-800 rounded-xl p-1">
+                    <button id="btn-list" onclick="switchView('list')" class="px-3 py-1 text-xs font-semibold rounded-lg bg-indigo-600 text-white transition">List</button>
+                    <button id="btn-analytics" onclick="switchView('analytics')" class="px-3 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">Analytics</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- List View -->
+        <div id="view-list" class="space-y-4">
+            <div id="meetings-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Meeting & Form cards injected dynamically -->
+            </div>
+        </div>
+
+        <!-- Analytics View -->
+        <div id="view-analytics" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="glass p-6 rounded-2xl border border-slate-800">
+                <h3 class="text-sm font-semibold mb-4 text-slate-300">Meetings & Forms by Platform</h3>
+                <div class="w-full h-64 flex justify-center">
+                    <canvas id="platformChart"></canvas>
+                </div>
+            </div>
+            <div class="glass p-6 rounded-2xl border border-slate-800">
+                <h3 class="text-sm font-semibold mb-4 text-slate-300">Status Breakdown</h3>
+                <div class="w-full h-64 flex justify-center">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Add Item Modal -->
+    <div id="add-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="glass p-6 rounded-2xl border border-slate-700 w-full max-w-md space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-base text-white">Add Meeting / Form</h3>
+                <button onclick="closeAddModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-400 mb-1">Title</label>
+                    <input type="text" id="m-title" placeholder="e.g. Sprint Planning or Feedback Form" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">Organizer / Sender</label>
+                    <input type="text" id="m-organizer" placeholder="e.g. manager@example.com" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">Platform</label>
+                    <select id="m-platform" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                        <option value="Google Meet">Google Meet</option>
+                        <option value="Microsoft Teams">Microsoft Teams</option>
+                        <option value="Zoom">Zoom</option>
+                        <option value="Google Forms">Google Forms</option>
+                        <option value="Microsoft Forms">Microsoft Forms</option>
+                        <option value="Typeform">Typeform</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">Meeting / Form URL</label>
+                    <input type="text" id="m-url" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-slate-400 mb-1">Date</label>
+                        <input type="date" id="m-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">Start Time</label>
+                        <input type="time" id="m-time" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button onclick="closeAddModal()" class="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs hover:bg-slate-700">Cancel</button>
+                <button onclick="submitManualItem()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-500">Save Item</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="glass mt-auto py-4 text-center text-xs text-slate-500 border-t border-slate-800">
+        AI Meeting & Form Intelligence Agent &copy; 2026. Built with FastAPI & Modern Multi-Agent Architecture.
+    </footer>
+
+    <script>
+        let allMeetings = [];
+        let platformChartObj = null;
+        let statusChartObj = null;
+        let autoSyncTimer = null;
+
+        async function fetchMeetings() {
+            try {
+                const res = await fetch('/meetings');
+                allMeetings = await res.json();
+                renderMeetings(allMeetings);
+                updateStats(allMeetings);
+                renderCharts(allMeetings);
+            } catch (err) {
+                console.error("Error fetching meetings:", err);
+            }
+        }
+
+        async function fetchNotifications() {
+            try {
+                const res = await fetch('/notifications');
+                const notifs = await res.json();
+                const list = document.getElementById('notif-list');
+                const badge = document.getElementById('notif-badge');
+                
+                if (notifs.length > 0) {
+                    badge.innerText = notifs.length;
+                    badge.classList.remove('hidden');
+                    list.innerHTML = notifs.map(n => `
+                        <div class="p-3 hover:bg-slate-800/50 transition">
+                            <div class="font-semibold text-slate-200">${n.title}</div>
+                            <div class="text-slate-400 mt-0.5">${n.message}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    badge.classList.add('hidden');
+                    list.innerHTML = '<div class="p-4 text-center text-slate-400">No new notifications</div>';
+                }
+            } catch (err) {
+                console.error("Error fetching notifications:", err);
+            }
+        }
+
+        async function syncMeetings() {
+            const btn = document.getElementById('sync-btn');
+            const icon = document.getElementById('sync-icon');
+            icon.classList.add('fa-spin');
+            btn.disabled = true;
+
+            try {
+                await fetch('/sync', { method: 'POST' });
+                await fetchMeetings();
+                await fetchNotifications();
+            } catch (err) {
+                console.error("Sync failed:", err);
+            } finally {
+                icon.classList.remove('fa-spin');
+                btn.disabled = false;
+            }
+        }
+
+        async function connectGmail() {
+            alert("Starting Gmail OAuth authentication flow. Please complete approval in your browser.");
+            try {
+                await fetch('/gmail/oauth', { method: 'POST' });
+            } catch (err) {
+                console.error("OAuth trigger:", err);
+            }
+        }
+
+        async function clearAllMeetings() {
+            if (!confirm("Are you sure you want to clear all stored meetings and forms?")) return;
+            try {
+                await fetch('/meetings', { method: 'DELETE' });
+                await fetchMeetings();
+                await fetchNotifications();
+            } catch (err) {
+                console.error("Failed to clear meetings:", err);
+            }
+        }
+
+        function toggleAutoSync() {
+            const toggle = document.getElementById('auto-sync-toggle');
+            if (toggle.checked) {
+                autoSyncTimer = setInterval(() => {
+                    syncMeetings();
+                }, 60000);
+            } else {
+                if (autoSyncTimer) clearInterval(autoSyncTimer);
+            }
+        }
+
+        function openAddModal() { document.getElementById('add-modal').classList.remove('hidden'); }
+        function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
+
+        async function submitManualItem() {
+            const title = document.getElementById('m-title').value;
+            const organizer = document.getElementById('m-organizer').value;
+            const platform = document.getElementById('m-platform').value;
+            const meeting_link = document.getElementById('m-url').value;
+            const date = document.getElementById('m-date').value;
+            const start_time = document.getElementById('m-time').value;
+
+            if (!title) { alert("Please provide a title"); return; }
+
+            try {
+                await fetch('/meetings/manual', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ title, organizer, platform, meeting_link, date, start_time, status: 'scheduled' })
+                });
+                closeAddModal();
+                await fetchMeetings();
+            } catch (err) {
+                console.error("Manual add failed:", err);
+            }
+        }
+
+        function formatMeetingTime(m) {
+            const dateStr = m.date || '';
+            const startTime = m.start_time || '';
+            const endTime = m.end_time || '';
+
+            if (dateStr && startTime && endTime) {
+                return `${dateStr} (${startTime} - ${endTime})`;
+            } else if (dateStr && startTime) {
+                return `${dateStr} (${startTime})`;
+            } else if (dateStr) {
+                return dateStr;
+            } else if (startTime) {
+                return startTime;
+            }
+            return 'Date/Time Not Specified';
+        }
+
+        function renderMeetings(meetings) {
+            const container = document.getElementById('meetings-container');
+            if (meetings.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full py-16 text-center glass rounded-2xl">
+                        <i class="fa-regular fa-folder-open text-4xl text-slate-600 mb-3"></i>
+                        <p class="text-slate-400 text-sm">No meetings or forms found. Click "Sync Inbox" to scan your email inbox for invitations and forms.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = meetings.map(m => {
+                const platformBadge = getPlatformBadge(m.platform);
+                const statusBadge = getStatusBadge(m.status);
+                const formattedTime = formatMeetingTime(m);
+                const actionButton = getActionButton(m);
+                
+                return `
+                    <div class="glass-card p-5 rounded-2xl flex flex-col justify-between space-y-4 transition duration-300 hover:-translate-y-1">
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between">
+                                ${platformBadge}
+                                ${statusBadge}
+                            </div>
+                            <h3 class="font-semibold text-base text-white line-clamp-1" title="${m.title}">${m.title}</h3>
+                            <p class="text-xs text-slate-400 line-clamp-2">${m.description || 'No description provided.'}</p>
+                        </div>
+
+                        <div class="space-y-2 text-xs text-slate-300 pt-3 border-t border-slate-800">
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-500"><i class="fa-regular fa-user mr-1.5"></i>Sender</span>
+                                <span class="font-medium text-slate-200">${m.organizer || 'Not specified'}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-slate-500"><i class="fa-regular fa-clock mr-1.5"></i>Time / Date</span>
+                                <span class="font-medium text-slate-200">${formattedTime}</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            ${actionButton}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getPlatformBadge(platform) {
+            const p = (platform || '').toLowerCase();
+            if (p.includes('google meet')) return `<span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-brands fa-google mr-1"></i>Google Meet</span>`;
+            if (p.includes('google form') || p.includes('forms.gle')) return `<span class="bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-square-poll-vertical mr-1"></i>Google Forms</span>`;
+            if (p.includes('microsoft form') || p.includes('ms form')) return `<span class="bg-teal-500/10 text-teal-400 border border-teal-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-list-check mr-1"></i>MS Forms</span>`;
+            if (p.includes('typeform')) return `<span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-clipboard-question mr-1"></i>Typeform</span>`;
+            if (p.includes('form') || p.includes('survey')) return `<span class="bg-violet-500/10 text-violet-400 border border-violet-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-file-pen mr-1"></i>${platform || 'Form / Survey'}</span>`;
+            if (p.includes('teams')) return `<span class="bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-users mr-1"></i>MS Teams</span>`;
+            if (p.includes('zoom')) return `<span class="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-video mr-1"></i>Zoom</span>`;
+            if (p.includes('webex')) return `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-globe mr-1"></i>Webex</span>`;
+            return `<span class="bg-slate-800 text-slate-400 text-[11px] font-medium px-2.5 py-0.5 rounded-full"><i class="fa-solid fa-link mr-1"></i>${platform || 'Online'}</span>`;
+        }
+
+        function getStatusBadge(status) {
+            const s = (status || 'scheduled').toLowerCase();
+            if (s === 'cancelled') return `<span class="bg-rose-500/10 text-rose-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md">Cancelled</span>`;
+            if (s === 'updated') return `<span class="bg-amber-500/10 text-amber-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md">Updated</span>`;
+            return `<span class="bg-emerald-500/10 text-emerald-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md">Scheduled</span>`;
+        }
+
+        function getActionButton(m) {
+            const url = m.meeting_url || m.meeting_link;
+            if (!url) {
+                return `<button disabled class="w-full bg-slate-800 text-slate-500 text-xs py-2 rounded-xl font-medium cursor-not-allowed">No Link Provided</button>`;
+            }
+            const p = (m.platform || '').toLowerCase();
+            const isForm = p.includes('form') || p.includes('survey') || p.includes('typeform') || p.includes('jotform');
+            
+            if (isForm) {
+                return `
+                    <a href="${url}" target="_blank" class="w-full bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 text-xs py-2 rounded-xl font-medium transition flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-file-pen"></i>
+                        <span>Fill Out Form</span>
+                    </a>
+                `;
+            }
+            return `
+                <a href="${url}" target="_blank" class="w-full bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs py-2 rounded-xl font-medium transition flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                    <span>Join Meeting</span>
+                </a>
+            `;
+        }
+
+        function filterMeetings() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const platform = document.getElementById('platform-filter').value;
+            const status = document.getElementById('status-filter').value;
+
+            const filtered = allMeetings.filter(m => {
+                const matchQuery = (m.title || '').toLowerCase().includes(query) || (m.organizer || '').toLowerCase().includes(query);
+                const matchPlatform = platform === 'ALL' || (m.platform || '').toLowerCase().includes(platform.toLowerCase());
+                const matchStatus = status === 'ALL' || (m.status || '').toLowerCase() === status.toLowerCase();
+                return matchQuery && matchPlatform && matchStatus;
+            });
+
+            renderMeetings(filtered);
+        }
+
+        function updateStats(meetings) {
+            document.getElementById('stat-total').innerText = meetings.length;
+            const platforms = new Set(meetings.map(m => m.platform).filter(Boolean));
+            document.getElementById('stat-platforms').innerText = platforms.size;
+            document.getElementById('stat-updated').innerText = meetings.filter(m => m.status === 'updated').length;
+            document.getElementById('stat-cancelled').innerText = meetings.filter(m => m.status === 'cancelled').length;
+        }
+
+        function renderCharts(meetings) {
+            const platformCounts = {};
+            meetings.forEach(m => {
+                const p = m.platform || 'Other';
+                platformCounts[p] = (platformCounts[p] || 0) + 1;
+            });
+
+            if (platformChartObj) platformChartObj.destroy();
+            const ctx1 = document.getElementById('platformChart').getContext('2d');
+            platformChartObj = new Chart(ctx1, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(platformCounts),
+                    datasets: [{
+                        data: Object.values(platformCounts),
+                        backgroundColor: ['#6366f1', '#10b981', '#06b6d4', '#f59e0b', '#ec4899', '#8b5cf6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { labels: { color: '#94a3b8' } } }
+                }
+            });
+
+            const statusCounts = { scheduled: 0, updated: 0, cancelled: 0 };
+            meetings.forEach(m => {
+                const s = (m.status || 'scheduled').toLowerCase();
+                statusCounts[s] = (statusCounts[s] || 0) + 1;
+            });
+
+            if (statusChartObj) statusChartObj.destroy();
+            const ctx2 = document.getElementById('statusChart').getContext('2d');
+            statusChartObj = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: ['Scheduled', 'Updated', 'Cancelled'],
+                    datasets: [{
+                        label: 'Meetings / Forms',
+                        data: [statusCounts.scheduled, statusCounts.updated, statusCounts.cancelled],
+                        backgroundColor: ['#10b981', '#f59e0b', '#f43f5e']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8' } },
+                        y: { ticks: { color: '#94a3b8' }, beginAtZero: true }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function switchView(view) {
+            const listEl = document.getElementById('view-list');
+            const analyticsEl = document.getElementById('view-analytics');
+            const btnList = document.getElementById('btn-list');
+            const btnAnalytics = document.getElementById('btn-analytics');
+
+            if (view === 'list') {
+                listEl.classList.remove('hidden');
+                analyticsEl.classList.add('hidden');
+                btnList.className = "px-3 py-1 text-xs font-semibold rounded-lg bg-indigo-600 text-white transition";
+                btnAnalytics.className = "px-3 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition";
+            } else {
+                listEl.classList.add('hidden');
+                analyticsEl.classList.remove('hidden');
+                btnAnalytics.className = "px-3 py-1 text-xs font-semibold rounded-lg bg-indigo-600 text-white transition";
+                btnList.className = "px-3 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition";
+            }
+        }
+
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notif-dropdown');
+            dropdown.classList.toggle('hidden');
+        }
+
+        // Initial Load
+        fetchMeetings();
+        fetchNotifications();
+    </script>
+</body>
+</html>
