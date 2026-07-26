@@ -6,7 +6,7 @@ set -e
 
 echo "Initializing PulseAudio Server..."
 rm -rf /tmp/pulse-* /run/pulse /root/.config/pulse/*/native
-pulseaudio -D --exit-idle-time=-1 --disallow-exit -v --log-target=stderr &
+pulseaudio -D --system --exit-idle-time=-1 --disallow-exit -v --log-target=stderr &
 sleep 2
 
 pactl load-module module-null-sink sink_name=meetingsink sink_properties=device.description=meetingsink || true

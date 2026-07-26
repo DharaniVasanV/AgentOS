@@ -37,7 +37,6 @@ COPY . .
 # Set up Execution scripts
 RUN chmod +x start_all.sh
 ENV PYTHONUNBUFFERED=1
-ENV PULSE_SERVER=unix:/tmp/pulseaudio.socket
 
 # Render will provide the PORT env var natively for the web traffic
 EXPOSE 10000
