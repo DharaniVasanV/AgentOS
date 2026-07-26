@@ -14,10 +14,10 @@ This workspace contains a minimal prototype of the AI Meeting Intelligence Agent
 
 ```bash
 python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 ```
 
-Then open http://127.0.0.1:8000/docs for the interactive API docs.
+Then open http://127.0.0.1:8001/docs for the interactive API docs.
 
 ## Gmail integration
 

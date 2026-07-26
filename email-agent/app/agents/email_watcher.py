@@ -74,7 +74,9 @@ def watch_inbox() -> List[Dict[str, object]]:
                 })
             return emails
         except Exception as exc:
+            import traceback
             print(f"Error watching inbox via Gmail API: {exc}")
+            traceback.print_exc()
             return []
 
     return []

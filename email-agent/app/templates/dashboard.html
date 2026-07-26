@@ -74,6 +74,16 @@
                 <span>Connect Gmail</span>
             </button>
 
+            <!-- Connect Bot Account for Google Meet -->
+            <button id="btn-connect-bot" onclick="connectBotAccount()" class="bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white text-xs px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 border border-violet-500/30">
+                <i class="fa-solid fa-robot text-violet-400"></i>
+                <span>Connect Bot</span>
+            </button>
+            <button id="btn-finish-bot" onclick="finishBotAccount()" class="hidden bg-emerald-600 text-white text-xs px-3 py-2 rounded-lg font-bold transition flex items-center space-x-1.5 shadow-lg shadow-emerald-600/20 tracking-wide animate-pulse">
+                <i class="fa-solid fa-check"></i>
+                <span>Finish Sign In</span>
+            </button>
+
             <!-- Add Meeting/Form -->
             <button onclick="openAddModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 shadow-lg shadow-emerald-600/20">
                 <i class="fa-solid fa-plus"></i>
@@ -267,6 +277,27 @@
         </div>
     </div>
 
+    <!-- AI Summary & Chat Modal -->
+    <div id="ai-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md">
+        <div class="glass p-6 rounded-2xl border border-slate-700 w-full max-w-2xl h-[80vh] flex flex-col space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-lg text-white flex items-center gap-2"><i class="fa-solid fa-wand-magic-sparkles text-indigo-400"></i> AI Meeting Intelligence</h3>
+                <button onclick="closeAIModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto space-y-4 pr-2" id="ai-chat-content">
+                <div id="ai-summary-box" class="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-sm text-slate-300">
+                    <div class="flex justify-center py-4"><i class="fa-solid fa-circle-notch fa-spin text-indigo-400 text-2xl"></i></div>
+                </div>
+            </div>
+            
+            <div class="border-t border-slate-800 pt-4 flex gap-2">
+                <input type="text" id="ai-question" placeholder="Ask AI about this meeting..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" onkeypress="if(event.key === 'Enter') submitQuestion()">
+                <button onclick="submitQuestion()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl transition shadow-lg shadow-indigo-600/20"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="glass mt-auto py-4 text-center text-xs text-slate-500 border-t border-slate-800">
         AI Meeting & Form Intelligence Agent &copy; 2026. Built with FastAPI & Modern Multi-Agent Architecture.
@@ -334,11 +365,48 @@
         }
 
         async function connectGmail() {
-            alert("Starting Gmail OAuth authentication flow. Please complete approval in your browser.");
             try {
-                await fetch('/gmail/oauth', { method: 'POST' });
+                const res = await fetch('/gmail/oauth');
+                const data = await res.json();
+                if (res.ok && data.url) {
+                    window.open(data.url, '_blank', 'width=600,height=800');
+                } else {
+                    alert("Google OAuth Error: \n" + (data.detail || "URL not returned"));
+                }
             } catch (err) {
-                console.error("OAuth trigger:", err);
+                console.error("OAuth trigger error:", err);
+            }
+        }
+
+        async function connectBotAccount() {
+            try {
+                const res = await fetch('/connect-bot', { method: 'POST' });
+                if (res.ok) {
+                    document.getElementById('btn-connect-bot').classList.add('hidden');
+                    document.getElementById('btn-finish-bot').classList.remove('hidden');
+                } else {
+                    const data = await res.json();
+                    alert('Error: ' + (data.detail || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('Connect bot error:', err);
+                alert('Failed to start bot connector. Check the terminal for errors.');
+            }
+        }
+
+        async function finishBotAccount() {
+            try {
+                const res = await fetch('/bot-signin-complete', { method: 'POST' });
+                if (res.ok) {
+                    document.getElementById('btn-finish-bot').classList.add('hidden');
+                    document.getElementById('btn-connect-bot').classList.remove('hidden');
+                    
+                    setTimeout(() => {
+                        alert('✅ Success! The bot successfully captured your Google session cookies. Please rebuild your Docker container or restart the meeting-agent to deploy the new auth state.');
+                    }, 500);
+                }
+            } catch (err) {
+                console.error(err);
             }
         }
 
@@ -472,17 +540,34 @@
             const s = (status || 'scheduled').toLowerCase();
             if (s === 'cancelled') return `<span class="bg-rose-500/10 text-rose-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md">Cancelled</span>`;
             if (s === 'updated') return `<span class="bg-amber-500/10 text-amber-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md">Updated</span>`;
+            if (s === 'completed') return `<span class="bg-indigo-500/10 text-indigo-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md">Completed</span>`;
+            if (s === 'in_progress') return `<span class="bg-blue-500/10 text-blue-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md animate-pulse">In Progress</span>`;
             return `<span class="bg-emerald-500/10 text-emerald-400 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md">Scheduled</span>`;
         }
 
         function getActionButton(m) {
             const url = m.meeting_url || m.meeting_link;
+            const p = (m.platform || '').toLowerCase();
+            const s = (m.status || 'scheduled').toLowerCase();
+            
+            // If the meeting is fully processed, show AI Summaries
+            if (s === 'completed') {
+                return `
+                    <button onclick="openAIModal('${m.id}')" class="w-full bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs py-2 rounded-xl font-medium transition flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span>Ask AI / View Summary</span>
+                    </button>
+                `;
+            }
+            if (s === 'in_progress') {
+                return `<button disabled class="w-full bg-blue-600/20 text-blue-400 border border-blue-500/30 text-xs py-2 rounded-xl font-medium cursor-not-allowed flex justify-center items-center gap-2"><i class="fa-solid fa-record-vinyl animate-pulse"></i> Agent is Recording...</button>`;
+            }
+            
             if (!url) {
                 return `<button disabled class="w-full bg-slate-800 text-slate-500 text-xs py-2 rounded-xl font-medium cursor-not-allowed">No Link Provided</button>`;
             }
-            const p = (m.platform || '').toLowerCase();
-            const isForm = p.includes('form') || p.includes('survey') || p.includes('typeform') || p.includes('jotform');
             
+            const isForm = p.includes('form') || p.includes('survey') || p.includes('typeform') || p.includes('jotform');
             if (isForm) {
                 return `
                     <a href="${url}" target="_blank" class="w-full bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 text-xs py-2 rounded-xl font-medium transition flex items-center justify-center space-x-2">
@@ -492,7 +577,7 @@
                 `;
             }
             return `
-                <a href="${url}" target="_blank" class="w-full bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs py-2 rounded-xl font-medium transition flex items-center justify-center space-x-2">
+                <a href="${url}" target="_blank" class="w-full bg-indigo-600/20 hover:bg-emerald-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs py-2 rounded-xl font-medium transition flex items-center justify-center space-x-2">
                     <i class="fa-solid fa-arrow-up-right-from-square"></i>
                     <span>Join Meeting</span>
                 </a>
@@ -597,6 +682,94 @@
         function toggleNotifications() {
             const dropdown = document.getElementById('notif-dropdown');
             dropdown.classList.toggle('hidden');
+        }
+
+        let currentActiveMeetingId = null;
+
+        async function openAIModal(meetingId) {
+            currentActiveMeetingId = meetingId;
+            document.getElementById('ai-modal').classList.remove('hidden');
+            const summaryBox = document.getElementById('ai-summary-box');
+            summaryBox.innerHTML = '<div class="flex justify-center py-4"><i class="fa-solid fa-circle-notch fa-spin text-indigo-400 text-2xl"></i></div>';
+            
+            const chatContent = document.getElementById('ai-chat-content');
+            while (chatContent.children.length > 1) {
+                chatContent.removeChild(chatContent.lastChild);
+            }
+
+            try {
+                const res = await fetch(`/meetings/${meetingId}/summary`);
+                const data = await res.json();
+                
+                if (res.ok) {
+                    const md = data.summary.replace(/\\n/g, '<br>').replace(/\n/g, '<br>');
+                    summaryBox.innerHTML = `<div class="font-bold mb-2 flex items-center gap-2"><i class="fa-solid fa-file-lines text-indigo-400"></i> AI Generated Summary</div>` + md;
+                } else {
+                    summaryBox.innerHTML = `<div class="text-rose-400">Error: ${data.detail}</div>`;
+                }
+            } catch (err) {
+                summaryBox.innerHTML = `<div class="text-rose-400">Failed to load summary.</div>`;
+            }
+        }
+
+        function closeAIModal() {
+            document.getElementById('ai-modal').classList.add('hidden');
+            currentActiveMeetingId = null;
+        }
+
+        async function submitQuestion() {
+            if (!currentActiveMeetingId) return;
+            const input = document.getElementById('ai-question');
+            const question = input.value.trim();
+            if (!question) return;
+
+            input.value = '';
+            const chatContent = document.getElementById('ai-chat-content');
+            
+            // Append User Question
+            chatContent.insertAdjacentHTML('beforeend', `
+                <div class="flex justify-end mt-4">
+                    <div class="bg-indigo-600 text-white rounded-2xl rounded-tr-none px-4 py-2 text-sm max-w-[80%] break-words">
+                        ${question}
+                    </div>
+                </div>
+            `);
+            chatContent.scrollTop = chatContent.scrollHeight;
+
+            // Setup loading bubble
+            const loadingId = 'loading-' + Date.now();
+            chatContent.insertAdjacentHTML('beforeend', `
+                <div class="flex justify-start mt-4" id="${loadingId}">
+                    <div class="bg-slate-800 border border-slate-700 text-slate-300 rounded-2xl rounded-tl-none px-4 py-3 text-sm flex gap-2 items-center">
+                        <i class="fa-solid fa-circle-notch fa-spin text-indigo-400"></i> AI is thinking...
+                    </div>
+                </div>
+            `);
+            chatContent.scrollTop = chatContent.scrollHeight;
+
+            try {
+                const res = await fetch(`/meetings/${currentActiveMeetingId}/ask`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ question })
+                });
+                const data = await res.json();
+                
+                const loader = document.getElementById(loadingId);
+                if (res.ok) {
+                    const formattedAns = data.answer.replace(/\\n/g, '<br>').replace(/\n/g, '<br>');
+                    loader.innerHTML = `
+                        <div class="bg-slate-800 border border-slate-700 text-slate-300 rounded-2xl rounded-tl-none px-4 py-3 text-sm max-w-[90%] break-words leading-relaxed space-y-2">
+                            <i class="fa-solid fa-sparkles text-indigo-400 mr-1"></i> ${formattedAns}
+                        </div>
+                    `;
+                } else {
+                    loader.innerHTML = `<div class="bg-rose-900/40 border border-rose-500/30 text-rose-300 rounded-2xl rounded-tl-none px-4 py-3 text-sm">Error: ${data.detail}</div>`;
+                }
+            } catch (err) {
+                document.getElementById(loadingId).innerHTML = `<div class="bg-rose-900/40 border border-rose-500/30 text-rose-300 rounded-2xl rounded-tl-none px-4 py-3 text-sm">Failed to get response.</div>`;
+            }
+            chatContent.scrollTop = chatContent.scrollHeight;
         }
 
         // Initial Load

@@ -1,6 +1,17 @@
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 from app.database import Base, engine, SessionLocal, Meeting
+from datetime import datetime
+
+def _parse_date(date_str: str):
+    if not date_str: return None
+    try: return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except Exception: return None
+
+def _parse_time(time_str: str):
+    if not time_str: return None
+    try: return datetime.strptime(time_str, "%H:%M").time()
+    except Exception: return None
 
 
 class MeetingStore:
@@ -21,7 +32,11 @@ class MeetingStore:
 
             if existing:
                 for key, val in meeting_data.items():
-                    if hasattr(existing, key) and val is not None:
+                    if key == "date":
+                        existing.meeting_date = _parse_date(val)
+                    elif key in ("start_time", "end_time") and val:
+                        setattr(existing, key, _parse_time(val))
+                    elif hasattr(existing, key) and val is not None and key not in ("id", "created_at"):
                         setattr(existing, key, val)
                 session.commit()
                 session.refresh(existing)
@@ -34,9 +49,9 @@ class MeetingStore:
                     description=meeting_data.get("description"),
                     platform=meeting_data.get("platform"),
                     meeting_url=meeting_data.get("meeting_link") or meeting_data.get("meeting_url"),
-                    date=meeting_data.get("date"),
-                    start_time=meeting_data.get("start_time"),
-                    end_time=meeting_data.get("end_time"),
+                    meeting_date=_parse_date(meeting_data.get("date")),
+                    start_time=_parse_time(meeting_data.get("start_time")),
+                    end_time=_parse_time(meeting_data.get("end_time")),
                     time_zone=meeting_data.get("time_zone"),
                     status=meeting_data.get("status", "scheduled"),
                 )
@@ -60,7 +75,15 @@ class MeetingStore:
 
     def clear_all_meetings(self) -> None:
         session = self._get_session()
+        from sqlalchemy import text
         try:
+            # Cleanly cascade delete through child tables to satisfy Foreign Key constraints
+            session.execute(text("DELETE FROM meeting_reports"))
+            session.execute(text("DELETE FROM meeting_transcripts"))
+            session.execute(text("DELETE FROM notifications"))
+            session.execute(text("DELETE FROM audit_logs"))
+            session.execute(text("DELETE FROM meeting_attendance"))
+            
             session.query(Meeting).delete()
             session.commit()
         finally:
@@ -87,7 +110,7 @@ class MeetingStore:
     @staticmethod
     def _meeting_to_dict(meeting: Meeting) -> Dict[str, object]:
         return {
-            "id": meeting.id,
+            "id": str(meeting.id) if meeting.id else None,
             "email_id": meeting.email_id,
             "organizer": meeting.organizer,
             "title": meeting.title,
@@ -95,9 +118,9 @@ class MeetingStore:
             "platform": meeting.platform,
             "meeting_link": meeting.meeting_url,
             "meeting_url": meeting.meeting_url,
-            "date": meeting.date,
-            "start_time": meeting.start_time,
-            "end_time": meeting.end_time,
+            "date": meeting.meeting_date.isoformat() if meeting.meeting_date else None,
+            "start_time": meeting.start_time.strftime("%H:%M") if meeting.start_time else None,
+            "end_time": meeting.end_time.strftime("%H:%M") if meeting.end_time else None,
             "time_zone": meeting.time_zone,
             "status": meeting.status,
             "created_at": meeting.created_at.isoformat() if meeting.created_at else None,

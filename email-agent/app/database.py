@@ -1,7 +1,9 @@
 import os
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
+import uuid
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Date, Time, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.dialects.postgresql import UUID
 
 
 def _load_env_file() -> dict:
@@ -38,9 +40,8 @@ try:
     with engine.connect() as conn:
         pass
 except Exception as exc:
-    print(f"Warning: Could not connect to primary database '{RAW_DB_URL}': {exc}. Falling back to SQLite.")
-    RAW_DB_URL = default_sqlite_url
-    engine = create_engine(RAW_DB_URL, connect_args={"check_same_thread": False})
+    print(f"CRITICAL ERROR: Could not connect to primary database '{RAW_DB_URL}': {exc}.")
+    raise exc
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -56,20 +57,44 @@ def get_utc_now():
 class Meeting(Base):
     __tablename__ = "meetings"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email_id = Column(String, unique=True, index=True, nullable=True)
-    organizer = Column(String, nullable=True)
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    platform = Column(String, nullable=True)
-    meeting_url = Column(String, nullable=True)
-    date = Column(String, nullable=True)  # YYYY-MM-DD
-    start_time = Column(String, nullable=True)  # HH:MM
-    end_time = Column(String, nullable=True)  # HH:MM
-    time_zone = Column(String, nullable=True)
-    status = Column(String, default="scheduled")  # scheduled, updated, cancelled
-    created_at = Column(DateTime, default=get_utc_now)
+    # Core meeting-agent columns (so meeting-agent can fetch & process these)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    title = Column(String(255), nullable=False)
+    meeting_url = Column(Text, nullable=True)
+    meeting_date = Column(Date, nullable=True)
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+    platform = Column(String(50), nullable=True)
+    meeting_id = Column(String(255), nullable=True)  # Meeting code (e.g. from Zoom)
+    passcode = Column(String(255), nullable=True)
+    status = Column(String(50), default="scheduled")
     updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
+
+    # Extra columns that email-agent extracts
+    email_id = Column(String(255), unique=True, index=True, nullable=True)
+    organizer = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    time_zone = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=get_utc_now)
+
+
+class MeetingReport(Base):
+    __tablename__ = "meeting_reports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    meeting_id = Column(UUID(as_uuid=True), nullable=False)
+    summary = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=get_utc_now)
+
+
+class MeetingTranscript(Base):
+    __tablename__ = "meeting_transcripts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    meeting_id = Column(UUID(as_uuid=True), nullable=False)
+    transcript = Column(Text, nullable=False)
+    language = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=get_utc_now)
 
 
 def get_db():
