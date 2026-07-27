@@ -60,6 +60,8 @@ async def launch_browser(bot_name: str) -> tuple[Browser, BrowserContext, Page]:
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
+            "--autoplay-policy=no-user-gesture-required",
+            "--disable-features=AudioServiceOutOfProcess",
         ],
     )
 
