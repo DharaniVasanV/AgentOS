@@ -299,13 +299,13 @@ Stores
 Meeting Audio
       │
       ▼
-OpenAI Whisper
+GroqAI Whisper
       │
       ▼
 Transcript
       │
       ▼
-OpenAI GPT
+GroqAI GPT
       │
       ├───────────────┐
       │               │
