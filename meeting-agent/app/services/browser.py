@@ -274,61 +274,58 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
             except Exception:
                 pass
 
-        # 4. Click the exact Google Meet Join button candidate (with up to 30s polling for React to render)
-        # 4. Find the Join button manually by text and bypass Playwright visibility locks via Native JS
-        clicked = False
-        name_filled = False
-        import time
-        start_wait = time.time()
+        # 4. Wait for the Join button to appear using JS polling (most reliable approach)
+        # Then click it using Playwright's force click which generates a trusted pointer event.
+        logger.info("Waiting up to 90s for Google Meet pre-join screen to render...")
         
-        while time.time() - start_wait < 40 and not clicked:
-            # Poll for guest name input first! The join button might not render until we fill this.
-            if not name_filled:
-                name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i], input[type="text"]')
-                try:
-                    if await name_input.count() > 0 and await name_input.first.is_visible():
-                        logger.info("Found guest name input field, filling bot name '%s'", bot_name)
-                        await name_input.first.fill(bot_name)
-                        await name_input.first.press("Enter")
-                        name_filled = True
-                        await page.wait_for_timeout(1000)
-                except Exception:
-                    pass
+        # First fill the name if needed (guest mode shows name input before button)
+        try:
+            name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i], input[type="text"]')
+            if await name_input.count() > 0 and await name_input.first.is_visible():
+                logger.info("Found guest name input field, filling bot name '%s'", bot_name)
+                await name_input.first.fill(bot_name)
+                await name_input.first.press("Tab")
+                await page.wait_for_timeout(500)
+        except Exception:
+            pass
 
-            # Scan the DOM manually for the exact text (matches Forensic Log success!)
-            buttons = page.locator("button, a, [role='button'], div[jsname='Qjft2e']")
+        # Use JS to wait until any element with "Ask to join" or "Join now" text appears in DOM
+        try:
+            await page.wait_for_function(
+                """() => {
+                    const all = document.querySelectorAll('button, [role="button"], a, span, div');
+                    return Array.from(all).some(el => {
+                        const t = (el.textContent || '').trim().toLowerCase();
+                        return t === 'ask to join' || t === 'join now';
+                    });
+                }""",
+                timeout=90_000
+            )
+            logger.info("Join button detected in DOM via JS polling! Attempting click...")
+        except Exception:
+            logger.warning("JS wait_for_function timed out — button may have appeared late, trying force click anyway")
+
+        # Now find and force-click the button using Playwright's locator
+        clicked = False
+        for selector in [
+            'button:has-text("Ask to join")',
+            'button:has-text("Join now")',
+            '[role="button"]:has-text("Ask to join")',
+            '[role="button"]:has-text("Join now")',
+        ]:
             try:
-                count = await buttons.count()
-                for i in range(count):
-                    text = (await buttons.nth(i).inner_text() or "").strip().lower()
-                    aria = (await buttons.nth(i).get_attribute("aria-label") or "").strip().lower()
-                    
-                    if "ask to join" in text or "join now" in text or "ask to join" in aria or "join now" in aria:
-                        logger.info(f"Found Google Meet Join button matching Text='{text}' Aria='{aria}'. Dispatching trusted pointer event...")
-                        # Scroll to the element first, then dispatch a TRUSTED PointerEvent.
-                        # Note: JS node.click() is untrusted and Google silently ignores it.
-                        # dispatch_event generates a trusted event that browsers treat as a real click.
-                        await buttons.nth(i).scroll_into_view_if_needed(timeout=3000)
-                        await buttons.nth(i).dispatch_event("click")
-                        clicked = True
-                        break
+                loc = page.locator(selector)
+                if await loc.count() > 0:
+                    logger.info("Clicking '%s' with force=True...", selector)
+                    await loc.first.click(force=True, timeout=10_000)
+                    clicked = True
+                    break
             except Exception:
                 pass
-            
-            if not clicked:
-                await page.wait_for_timeout(1000)  # Sleep 1s and check DOM again
-
-        if not clicked:
-            logger.warning("After 40s DOM scan, no Join button matched! Trying blind fallback click...")
-            fallback = page.locator('button[jsname="Qjft2e"]')
-            if await fallback.count() > 0:
-                await fallback.first.click(force=True, timeout=5000)
-                clicked = True
 
         if not clicked:
             logger.error("FATAL: Could not find ANY Join button to click on the screen!")
-            # We explicitly raise so the except block screenshoots and fails the try immediately
-            raise Exception("No Join button visible on screen after 30s wait.")
+            raise Exception("No Join button visible on screen after 90s wait.")
 
         # 5. Wait to enter meeting or waiting room
         # We must wait for the "Leave" button to appear. If we are placed in a waiting room
