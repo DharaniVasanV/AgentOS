@@ -109,36 +109,6 @@ def oauth_callback(code: str):
         return HTMLResponse(f"<h1>OAuth Error</h1><p>{str(e)}</p>")
 
 
-@app.post("/connect-bot")
-def connect_bot_account():
-    """Launch save_google_session.py on the host to let the user sign into Google
-    for the meeting bot. The script saves browser cookies that the Docker container
-    mounts and uses to join Google Meet as a signed-in user."""
-    script_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "meeting-agent", "save_google_session.py")
-    )
-    if not os.path.exists(script_path):
-        raise HTTPException(status_code=404, detail=f"save_google_session.py not found at {script_path}")
-
-    try:
-        subprocess.Popen(
-            [sys.executable, script_path],
-            cwd=os.path.dirname(script_path),
-        )
-        return {"message": "Bot session saver launched! A browser window will open shortly."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/bot-signin-complete")
-def finish_bot_signin():
-    lock_file = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "meeting-agent", "bot_signin_done.txt")
-    )
-    with open(lock_file, "w") as f:
-        f.write("done")
-    return {"message": "Cookies saving process has started! You can now close the browser if it doesn't close on its own."}
-
 
 @app.get("/meetings/{meeting_id}/summary")
 def get_meeting_summary(meeting_id: str):

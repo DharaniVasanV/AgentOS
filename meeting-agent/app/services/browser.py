@@ -49,7 +49,7 @@ _JOIN_TIMEOUT_MS = 20_000
 _SESSION_FILE = "/app/google_session.json"  # path inside Docker container
 
 
-async def launch_browser(bot_name: str) -> tuple[Browser, BrowserContext, Page]:
+async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
     playwright = await async_playwright().start()
     browser = await playwright.chromium.launch(
         headless=True,
@@ -105,7 +105,6 @@ async def launch_browser(bot_name: str) -> tuple[Browser, BrowserContext, Page]:
     """)
 
     page = await context.new_page()
-    page._bot_name = bot_name
     return browser, context, page
 
 
@@ -177,7 +176,7 @@ async def _google_sign_in(page: Page) -> bool:
         return False
 
 
-async def _join_google_meet(page: Page, meeting_url: str) -> bool:
+async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool:
     try:
         # Authentication is handled at launch time via the saved session file
         # (loaded in launch_browser). No sign-in needed here.
@@ -201,7 +200,7 @@ async def _join_google_meet(page: Page, meeting_url: str) -> bool:
         if await name_input.count() > 0:
             try:
                 await name_input.first.wait_for(state="visible", timeout=5000)
-                await name_input.first.fill("Meeting Notes Bot")
+                await name_input.first.fill(bot_name)
                 await name_input.first.press("Tab") # Trigger blur to definitively enable the Join button
                 await page.wait_for_timeout(500)
             except Exception:
@@ -235,7 +234,7 @@ async def _join_google_meet(page: Page, meeting_url: str) -> bool:
         return False
 
 
-async def _join_zoom(page: Page, meeting_url: str) -> bool:
+async def _join_zoom(page: Page, meeting_url: str, bot_name: str) -> bool:
     """Zoom web client join flow. NOTE: Zoom frequently requires the meeting
     host to admit from a waiting room, and the web client's DOM/iframe
     structure changes across releases — verify selectors against the
@@ -252,7 +251,7 @@ async def _join_zoom(page: Page, meeting_url: str) -> bool:
 
         name_input = frame.locator('input#inputname, input[name="uname"]')
         if await name_input.count() > 0:
-            await name_input.first.fill(getattr(page, "_bot_name", "Meeting Notes Bot"))
+            await name_input.first.fill(bot_name)
 
         join_btn = frame.locator('button:has-text("Join"), #joinBtn')
         await join_btn.first.click(timeout=_JOIN_TIMEOUT_MS)
@@ -264,7 +263,7 @@ async def _join_zoom(page: Page, meeting_url: str) -> bool:
         return False
 
 
-async def _join_teams(page: Page, meeting_url: str) -> bool:
+async def _join_teams(page: Page, meeting_url: str, bot_name: str) -> bool:
     """Microsoft Teams web join flow. NOTE: Teams frequently forces an app-
     download interstitial ("Continue on this browser" / "Use the web app
     instead") before showing the name field — verify this path against a
@@ -278,7 +277,7 @@ async def _join_teams(page: Page, meeting_url: str) -> bool:
 
         name_input = page.locator('input[data-tid="prejoin-display-name-input"]')
         if await name_input.count() > 0:
-            await name_input.first.fill(getattr(page, "_bot_name", "Meeting Notes Bot"))
+            await name_input.first.fill(bot_name)
 
         for tid in ["toggle-mute", "toggle-video"]:
             btn = page.locator(f'[data-tid="{tid}"][aria-pressed="false"]')
@@ -311,8 +310,8 @@ async def join_meeting(meeting_url: str, platform: str, bot_name: str) -> tuple[
         logger.error("Unsupported platform '%s' for url %s", platform, meeting_url)
         return False, None, None
 
-    browser, context, page = await launch_browser(bot_name)
-    success = await handler(page, meeting_url)
+    browser, context, page = await launch_browser()
+    success = await handler(page, meeting_url, bot_name)
 
     if not success:
         await context.close()

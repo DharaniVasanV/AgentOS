@@ -56,24 +56,9 @@ async def run_session_saver():
         await page.goto("https://accounts.google.com/signin", wait_until="domcontentloaded")
 
         # Wait for user to sign in manually via the frontend UI signal
-        print("\n   Waiting for the user to click 'Finish Sign In' on the dashboard...")
-        lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_signin_done.txt")
-        # Ensure it's clear before we start
-        if os.path.exists(lock_file):
-            os.remove(lock_file)
-            
-        while not os.path.exists(lock_file):
-            # If the user closed the browser prematurely, gracefully exit
-            if not browser.is_connected():
-                print("❌ Browser was closed before sign-in was completed.")
-                return
-            await asyncio.sleep(1)
-
-        # Proceed to save cookies and clean up lock
-        try:
-            os.remove(lock_file)
-        except Exception:
-            pass
+        print("\n   [ACTION REQUIRED]: Log in with agentos.meetbot@gmail.com, then come back to this terminal and press ENTER...")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, input)
 
         # Navigate to Google to refresh cookies
         await page.goto("https://myaccount.google.com/", wait_until="domcontentloaded", timeout=15000)

@@ -74,16 +74,6 @@
                 <span>Connect Gmail</span>
             </button>
 
-            <!-- Connect Bot Account for Google Meet -->
-            <button id="btn-connect-bot" onclick="connectBotAccount()" class="bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white text-xs px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 border border-violet-500/30">
-                <i class="fa-solid fa-robot text-violet-400"></i>
-                <span>Connect Bot</span>
-            </button>
-            <button id="btn-finish-bot" onclick="finishBotAccount()" class="hidden bg-emerald-600 text-white text-xs px-3 py-2 rounded-lg font-bold transition flex items-center space-x-1.5 shadow-lg shadow-emerald-600/20 tracking-wide animate-pulse">
-                <i class="fa-solid fa-check"></i>
-                <span>Finish Sign In</span>
-            </button>
-
             <!-- Add Meeting/Form -->
             <button onclick="openAddModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5 shadow-lg shadow-emerald-600/20">
                 <i class="fa-solid fa-plus"></i>
@@ -375,38 +365,6 @@
                 }
             } catch (err) {
                 console.error("OAuth trigger error:", err);
-            }
-        }
-
-        async function connectBotAccount() {
-            try {
-                const res = await fetch('/connect-bot', { method: 'POST' });
-                if (res.ok) {
-                    document.getElementById('btn-connect-bot').classList.add('hidden');
-                    document.getElementById('btn-finish-bot').classList.remove('hidden');
-                } else {
-                    const data = await res.json();
-                    alert('Error: ' + (data.detail || 'Unknown error'));
-                }
-            } catch (err) {
-                console.error('Connect bot error:', err);
-                alert('Failed to start bot connector. Check the terminal for errors.');
-            }
-        }
-
-        async function finishBotAccount() {
-            try {
-                const res = await fetch('/bot-signin-complete', { method: 'POST' });
-                if (res.ok) {
-                    document.getElementById('btn-finish-bot').classList.add('hidden');
-                    document.getElementById('btn-connect-bot').classList.remove('hidden');
-                    
-                    setTimeout(() => {
-                        alert('✅ Success! The bot successfully captured your Google session cookies. Please rebuild your Docker container or restart the meeting-agent to deploy the new auth state.');
-                    }, 500);
-                }
-            } catch (err) {
-                console.error(err);
             }
         }
 
