@@ -274,13 +274,18 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
 
         # 4. Click the exact Google Meet Join button candidate (with up to 30s polling for React to render)
         join_candidates = [
+            'div[role="button"]:has-text("Ask to join")',
+            'div[role="button"]:has-text("Join now")',
             'button:has-text("Ask to join")',
             'button:has-text("Join now")',
+            'text="Ask to join"',
+            'text="Join now"',
             'span:has-text("Ask to join")',
             'span:has-text("Join now")',
             'button:has-text("Join")',
-            'span:has-text("Join")',
+            'text="Join"',
             'button[jsname="Qjft2e"]',
+            'div[jsname="Qjft2e"]',
             '[aria-label*="Ask to join" i]',
             '[aria-label*="Join now" i]',
         ]
