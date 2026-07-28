@@ -202,18 +202,6 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
             except Exception:
                 pass
 
-        # 2. Check if a guest name input is present and fill it
-        name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i], input[type="text"]')
-        if await name_input.count() > 0:
-            try:
-                if await name_input.first.is_visible():
-                    logger.info("Found guest name input field, filling bot name '%s'", bot_name)
-                    await name_input.first.fill(bot_name)
-                    await name_input.first.press("Tab")
-                    await page.wait_for_timeout(1000)
-            except Exception:
-                pass
-
         # 3. Mute camera & mic via hotkeys + DOM clicks prior to clicking join
         try:
             await page.keyboard.press("Control+d")
@@ -249,10 +237,24 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
         ]
 
         clicked = False
+        name_filled = False
         import time
         start_wait = time.time()
         
-        while time.time() - start_wait < 30 and not clicked:
+        while time.time() - start_wait < 40 and not clicked:
+            # Poll for guest name input first! The join button might not render until we fill this.
+            if not name_filled:
+                name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i], input[type="text"]')
+                try:
+                    if await name_input.count() > 0 and await name_input.first.is_visible():
+                        logger.info("Found guest name input field, filling bot name '%s'", bot_name)
+                        await name_input.first.fill(bot_name)
+                        await name_input.first.press("Enter")
+                        name_filled = True
+                        await page.wait_for_timeout(1000)
+                except Exception:
+                    pass
+
             for sel in join_candidates:
                 loc = page.locator(sel)
                 if await loc.count() > 0 and await loc.first.is_visible():
@@ -288,9 +290,24 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
     except Exception as e:
         logger.exception("Failed to join Google Meet at %s: %s", meeting_url, e)
         try:
-            await page.screenshot(path='/app/meet_join_failed.png')
+            curr_url = page.url
+            curr_title = await page.title()
+            logger.error(f"FAILURE CONTEXT -> URL: {curr_url}")
+            logger.error(f"FAILURE CONTEXT -> Title: {curr_title}")
+            
+            # Dump all button text on screen to see what we COULD have clicked
+            buttons = page.locator("button, a, [role='button']")
+            count = await buttons.count()
+            ui_texts = []
+            for i in range(count):
+                text = await buttons.nth(i).inner_text()
+                aria = await buttons.nth(i).get_attribute("aria-label")
+                if text or aria:
+                    ui_texts.append(f"Text='{text.strip()}' Aria='{aria}'")
+            logger.error(f"FAILURE CONTEXT -> Visible Buttons/Links: {ui_texts}")
+            
             html = await page.content()
-            with open("/app/meet_join_failed.html", "w", encoding="utf-8") as f:
+            with open("/tmp/meet_join_failed.html", "w", encoding="utf-8") as f:
                 f.write(html)
         except Exception:
             pass
