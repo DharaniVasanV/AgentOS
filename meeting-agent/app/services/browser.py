@@ -191,26 +191,63 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
 
         # Use a longer timeout — Docker network can be slow loading Meet
         await page.goto(meeting_url, wait_until="domcontentloaded", timeout=60_000)
-
-        # Wait for Meet's JS to finish rendering the pre-join screen
         await page.wait_for_timeout(3000)
 
-        # Dismiss any "Got it" tracking/permission toasts that intercept clicks
+        # 1. Dismiss any "Got it" / tracking / permission toasts or modals
+        for popup_text in ["Got it", "Dismiss", "Continue without", "Close", "Allow"]:
+            try:
+                pop = page.locator(f'button:has-text("{popup_text}")')
+                if await pop.count() > 0:
+                    await pop.first.click(timeout=2000)
+            except Exception:
+                pass
+
+        # 2. Check if a name input is present (guest mode / initial join screen) and fill it FIRST
+        name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i], input[type="text"]')
+        if await name_input.count() > 0:
+            try:
+                if await name_input.first.is_visible():
+                    logger.info("Found guest name input field, filling bot name '%s'", bot_name)
+                    await name_input.first.fill(bot_name)
+                    await name_input.first.press("Tab")
+                    await page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+        # 3. Locate the Join button with expanded selectors (covering all Google Meet DOM variants)
+        join_selector = (
+            'button:has-text("Ask to join"), '
+            'button:has-text("Join now"), '
+            'button:has-text("Join"), '
+            'button[jsname="Qjft2e"], '
+            '[aria-label*="Ask to join" i], '
+            '[aria-label*="Join now" i], '
+            '[aria-label*="Join meeting" i]'
+        )
+        join_btn = page.locator(join_selector)
+
+        # Wait up to 30s for the join button to appear
         try:
-            got_it = page.locator('button:has-text("Got it"), button:has-text("Dismiss")')
-            if await got_it.count() > 0:
-                await got_it.first.click(timeout=3000)
+            await join_btn.first.wait_for(state="visible", timeout=30_000)
+        except Exception:
+            # If wait_for timed out, try re-checking name input or clicking body to trigger render
+            logger.warning("Join button not immediately visible, re-checking DOM...")
+            if await name_input.count() > 0 and await name_input.first.is_visible():
+                await name_input.first.fill(bot_name)
+                await name_input.first.press("Enter")
+                await page.wait_for_timeout(2000)
+
+        await page.wait_for_timeout(1000)
+
+        # 4. Mute camera & mic via hotkeys + DOM clicks
+        try:
+            await page.keyboard.press("Control+d")
+            await page.wait_for_timeout(300)
+            await page.keyboard.press("Control+e")
+            await page.wait_for_timeout(300)
         except Exception:
             pass
-        # Critical Fix: Docker networks & Chromium emulation are very slow to render Google Meet's heavy React DOM!
-        # We MUST forcefully wait for the core UI (like the Join button) to actually exist before we can safely mute!
-        join_btn = page.locator('button:has-text("Ask to join"), button:has-text("Join now")')
-        await join_btn.first.wait_for(state="visible", timeout=30_000)
-        
-        # Explicitly wait another 2 seconds to ensure any internal React hydration has fully finalized
-        await page.wait_for_timeout(2000)
 
-        # Now that the DOM is fully hydrated, Belt-and-suspenders brute force: Click any button stating "Turn off" for AV
         for label in ["microphone", "mic", "camera", "video"]:
             btns = page.locator(f'[aria-label*="{label}" i]')
             try:
@@ -218,38 +255,29 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                 for i in range(count):
                     aria = await btns.nth(i).get_attribute("aria-label")
                     if aria and "turn off" in aria.lower():
-                        await btns.nth(i).click(force=True, timeout=3000)
-                        await page.wait_for_timeout(300)
+                        await btns.nth(i).click(force=True, timeout=2000)
+                        await page.wait_for_timeout(200)
             except Exception:
                 pass
 
-        # Ensure we always type the name if requested, and explicitly blur to trigger React state
-        name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i]')
-        if await name_input.count() > 0:
-            try:
-                await name_input.first.wait_for(state="visible", timeout=5000)
-                await name_input.first.fill(bot_name)
-                await name_input.first.press("Tab") # Trigger blur to definitively enable the Join button
-                await page.wait_for_timeout(500)
-            except Exception:
-                pass
-
-        join_btn = page.locator('button:has-text("Ask to join"), button:has-text("Join now")')
+        # 5. Click Join button
+        logger.info("Clicking Google Meet Join button...")
         await join_btn.first.click(timeout=_JOIN_TIMEOUT_MS)
 
-        # If it's "Ask to join", we now sit in a waiting room until admitted.
-        # Detect the in-call state by waiting for the "leave call" control.
-        await page.locator('[aria-label*="Leave call" i]').first.wait_for(timeout=60_000)
+        # 6. Wait to enter meeting or waiting room
+        leave_selector = '[aria-label*="Leave call" i], [aria-label*="Leave" i], button[jsname="CQeAdf"]'
+        await page.locator(leave_selector).first.wait_for(timeout=60_000)
+        logger.info("Successfully joined Google Meet call!")
         return True
-    except Exception:
-        await page.screenshot(path='/app/meet_join_failed.png')
+    except Exception as e:
+        logger.exception("Failed to join Google Meet at %s: %s", meeting_url, e)
         try:
+            await page.screenshot(path='/app/meet_join_failed.png')
             html = await page.content()
             with open("/app/meet_join_failed.html", "w", encoding="utf-8") as f:
                 f.write(html)
         except Exception:
             pass
-        logger.exception("Failed to join Google Meet at %s", meeting_url)
         return False
 
 
