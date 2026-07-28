@@ -174,13 +174,15 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
 
         # --- Step 4: Click the Join button via JS bounding rect + real mouse ---
         result = await page.evaluate("""() => {
-            const els = document.querySelectorAll('button, [role="button"]');
+            const els = document.querySelectorAll('button, [role="button"], span');
             for (const el of els) {
                 const t = (el.innerText || '').trim().toLowerCase();
                 if (t === 'ask to join' || t === 'join now') {
-                    el.scrollIntoView({ block: 'center' });
                     const r = el.getBoundingClientRect();
-                    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, text: el.innerText.trim() };
+                    if (r.width > 0 && r.height > 0) {
+                        el.scrollIntoView({ block: 'center' });
+                        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, text: el.innerText.trim() };
+                    }
                 }
             }
             return null;
