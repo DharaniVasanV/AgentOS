@@ -14,18 +14,20 @@ async def run():
     print("return to this terminal and press ENTER to save the session.")
     print("----------------------------------------------------------------\n")
     
-    async with async_playwright() as p:
-        # Launch headed so the real human can see and interact
-        browser = await p.chromium.launch(headless=False)
+        # Attempt to use the user's real Chrome/Edge browser to completely bypass Google's bot detection
+        try:
+            print("Attempting to launch native Google Chrome...")
+            browser = await p.chromium.launch(headless=False, channel="chrome", args=["--disable-blink-features=AutomationControlled"])
+        except Exception:
+            try:
+                print("Chrome not found. Attempting to launch native Microsoft Edge...")
+                browser = await p.chromium.launch(headless=False, channel="msedge", args=["--disable-blink-features=AutomationControlled"])
+            except Exception:
+                print("Native browsers not found. Falling back to Playwright Chromium...")
+                browser = await p.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled"])
         
-        # Use the exact same context settings as the main application to avoid 
-        # mismatch fingerprints that might cause Google to invalidate the session cookie.
+        # Omit hardcoded user-agents, as outdated UAs trigger "This browser is not secure"
         context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
             viewport={"width": 1280, "height": 720},
             locale="en-US",
         )

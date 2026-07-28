@@ -89,11 +89,6 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             context = await browser.new_context(
                 storage_state=_SESSION_FILE,
                 permissions=["camera", "microphone"],
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/125.0.0.0 Safari/537.36"
-                ),
                 viewport={"width": 1280, "height": 720},
                 locale="en-US",
             )
@@ -102,11 +97,6 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             # Always a clean, unauthenticated context — anonymous guest join only.
             context = await browser.new_context(
                 permissions=["camera", "microphone"],
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/125.0.0.0 Safari/537.36"
-                ),
                 viewport={"width": 1280, "height": 720},
                 locale="en-US",
             )
