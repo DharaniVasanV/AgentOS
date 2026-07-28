@@ -289,46 +289,56 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
         except Exception:
             pass
 
-        # Use JS to wait until any element with "Ask to join" or "Join now" text appears in DOM
+        # Use JS to wait until the VISIBLE "Ask to join" button appears (innerText, not textContent)
         try:
             await page.wait_for_function(
                 """() => {
-                    const all = document.querySelectorAll('button, [role="button"], a, span, div');
+                    const all = document.querySelectorAll('button, [role="button"], a');
                     return Array.from(all).some(el => {
-                        const t = (el.textContent || '').trim().toLowerCase();
+                        const t = (el.innerText || '').trim().toLowerCase();
                         return t === 'ask to join' || t === 'join now';
                     });
                 }""",
                 timeout=90_000
             )
-            logger.info("Join button detected in DOM via JS polling! Attempting click...")
+            logger.info("Visible Join button detected via JS polling! Attempting click...")
         except Exception:
-            logger.warning("JS wait_for_function timed out — button may have appeared late, trying force click anyway")
+            logger.warning("JS wait_for_function timed out — trying click anyway")
 
         # Now find the button's exact screen position using JS and click via real mouse movement
         clicked = False
+        # Use innerText so we only match the VISIBLE rendered button (not hidden templates)
         result = await page.evaluate("""() => {
-            const all = document.querySelectorAll('button, [role="button"], a, span, div');
+            const all = document.querySelectorAll('button, [role="button"], a');
             for (const el of all) {
-                const t = (el.textContent || '').trim().toLowerCase();
+                const t = (el.innerText || '').trim().toLowerCase();
                 if (t === 'ask to join' || t === 'join now') {
+                    el.scrollIntoView();
                     const rect = el.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, text: t };
-                    }
+                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, w: rect.width, h: rect.height, text: t };
                 }
             }
             return null;
         }""")
 
-        if result:
+        logger.info(f"JS bounding rect result: {result}")
+
+        if result and result.get('w', 0) > 0 and result.get('h', 0) > 0:
             x, y = result['x'], result['y']
-            logger.info(f"Clicking '{result['text']}' button at screen coords ({x:.0f}, {y:.0f}) via real mouse...")
+            logger.info(f"Clicking '{result['text']}' at ({x:.0f}, {y:.0f}) via real mouse...")
             await page.mouse.move(x, y)
-            await page.wait_for_timeout(200)
+            await page.wait_for_timeout(300)
             await page.mouse.click(x, y)
             clicked = True
-        
+        elif result:
+            # Element found but has 0 size — try Playwright force click as last resort
+            logger.warning(f"Button '{result['text']}' has 0 bounding rect. Trying Playwright force click...")
+            try:
+                await page.locator(f'[role="button"]:has-text("Ask to join")').first.click(force=True, timeout=5000)
+                clicked = True
+            except Exception as ex:
+                logger.warning(f"Force click also failed: {ex}")
+
         if not clicked:
             logger.error("FATAL: Could not find ANY Join button to click on the screen!")
             raise Exception("No Join button visible on screen after 90s wait.")
