@@ -157,59 +157,41 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
 
         # --- Step 3: Wait up to 90s for "Ask to join" / "Join now" to appear ---
         logger.info("Waiting up to 90s for the Join button to appear...")
+        
+        # We MUST use the ":visible" pseudo-selector to ignore Google's 0x0 invisible template buttons
+        join_btn = page.locator(
+            'button:has-text("Ask to join"):visible, '
+            '[role="button"]:has-text("Ask to join"):visible, '
+            'button:has-text("Join now"):visible, '
+            '[role="button"]:has-text("Join now"):visible'
+        )
+        
         try:
-            await page.wait_for_function(
-                """() => {
-                    const els = document.querySelectorAll('button, [role="button"]');
-                    return Array.from(els).some(el => {
-                        const t = (el.innerText || '').trim().toLowerCase();
-                        return t === 'ask to join' || t === 'join now';
-                    });
-                }""",
-                timeout=90_000,
-            )
-            logger.info("Join button is visible in DOM.")
+            await join_btn.first.wait_for(state="visible", timeout=90_000)
+            logger.info("Visible Join button found by Playwright!")
         except Exception:
-            logger.warning("Timed out waiting for join button — attempting click anyway.")
+            logger.warning("Timed out waiting for join button — will attempt blind fallback.")
 
-        # --- Step 4: Click the Join button via JS bounding rect + real mouse ---
-        result = await page.evaluate("""() => {
-            const els = document.querySelectorAll('button, [role="button"], span');
-            for (const el of els) {
-                const t = (el.innerText || '').trim().toLowerCase();
-                if (t === 'ask to join' || t === 'join now') {
-                    const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0) {
-                        el.scrollIntoView({ block: 'center' });
-                        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, text: el.innerText.trim() };
-                    }
-                }
-            }
-            return null;
-        }""")
-
-        logger.info("Join button bounding rect: %s", result)
-
+        # --- Step 4: Click the Join button ---
         clicked = False
-        if result and result.get("w", 0) > 0 and result.get("h", 0) > 0:
-            x, y = result["x"], result["y"]
-            logger.info("Clicking '%s' at (%.0f, %.0f) via real mouse...", result["text"], x, y)
-            await page.mouse.move(x, y)
-            await page.wait_for_timeout(200)
-            await page.mouse.click(x, y)
-            clicked = True
-        elif result:
-            # Button found but 0-size (likely off-viewport). Scroll and try Playwright force click.
-            logger.warning("Join button has 0 bounding rect — trying force click.")
-            try:
-                await page.locator('[role="button"]:has-text("Ask to join")').first.click(force=True, timeout=10_000)
-                clicked = True
-            except Exception:
-                try:
-                    await page.locator('[role="button"]:has-text("Join now")').first.click(force=True, timeout=10_000)
+        try:
+            if await join_btn.count() > 0:
+                # get actual screen coordinates from Playwright's layout engine
+                box = await join_btn.first.bounding_box()
+                if box:
+                    x = box["x"] + box["width"] / 2
+                    y = box["y"] + box["height"] / 2
+                    logger.info("Generating physical mouse click at (%.0f, %.0f)...", x, y)
+                    await page.mouse.move(x, y)
+                    await page.wait_for_timeout(200)
+                    await page.mouse.click(x, y)
                     clicked = True
-                except Exception as ex:
-                    logger.error("Force click failed: %s", ex)
+                else:
+                    logger.warning("Playwright bounding_box() returned None, falling back to force click.")
+                    await join_btn.first.click(force=True, timeout=5000)
+                    clicked = True
+        except Exception as ex:
+            logger.error("Failed to click Join button: %s", ex)
 
         if not clicked:
             logger.error("Could not click any Join button. Raising to trigger forensic dump.")
