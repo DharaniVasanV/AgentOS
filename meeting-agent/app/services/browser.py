@@ -235,7 +235,7 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
             except Exception:
                 pass
 
-        # 4. Click the exact Google Meet Join button candidate
+        # 4. Click the exact Google Meet Join button candidate (with up to 30s polling for React to render)
         join_candidates = [
             'button:has-text("Ask to join")',
             'button:has-text("Join now")',
@@ -249,25 +249,38 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
         ]
 
         clicked = False
-        for sel in join_candidates:
-            loc = page.locator(sel)
-            if await loc.count() > 0 and await loc.first.is_visible():
-                logger.info("Found Google Meet Join button matching '%s', clicking...", sel)
-                await loc.first.click(force=True, timeout=5000)
-                clicked = True
-                break
+        import time
+        start_wait = time.time()
+        
+        while time.time() - start_wait < 30 and not clicked:
+            for sel in join_candidates:
+                loc = page.locator(sel)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    logger.info("Found Google Meet Join button matching '%s', clicking...", sel)
+                    await loc.first.click(force=True, timeout=5000)
+                    clicked = True
+                    break
+            
+            if not clicked:
+                await page.wait_for_timeout(1000)  # Sleep 1s and check DOM again
 
         if not clicked:
-            logger.warning("Could not clearly click a Join button. Searching for fallback...")
+            logger.warning("After 30s, no standard Google Meet Join button appeared! Trying blind fallback click...")
             fallback = page.locator('button[jsname="Qjft2e"]')
             if await fallback.count() > 0:
                 await fallback.first.click(force=True, timeout=5000)
+                clicked = True
+
+        if not clicked:
+            logger.error("FATAL: Could not find ANY Join button to click on the screen!")
+            # We explicitly raise so the except block screenshoots and fails the try immediately
+            raise Exception("No Join button visible on screen after 30s wait.")
 
         # 5. Wait to enter meeting or waiting room
         # We must wait for the "Leave" button to appear. If we are placed in a waiting room
         # ("Asking to join..."), we may wait here for a LONG time until the host admits us.
         # We set this timeout to 15 minutes to avoid dropping out if the host is delayed.
-        logger.info("Waiting for host to admit bot (or for immediate join) - timeout 15m...")
+        logger.info("Clicked Join! Waiting for host to admit bot (timeout 15m) or automatic entry...")
         leave_selector = '[aria-label*="Leave call" i], [aria-label*="Leave" i], button[jsname="CQeAdf"]'
         await page.locator(leave_selector).first.wait_for(timeout=900_000)
         logger.info("Successfully joined Google Meet call!")
