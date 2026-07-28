@@ -95,6 +95,15 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             logger.info("Successfully decoded Google Session from Environment Variable!")
         except Exception:
             logger.exception("Failed to decode GOOGLE_SESSION_B64.")
+    else:
+        # Ensure we don't accidentally load a stale session from a previous Render build
+        # if the user specifically removed the environment variable to test Guest Mode!
+        if os.path.exists(_SESSION_FILE):
+            try:
+                os.remove(_SESSION_FILE)
+                logger.info("Deleted stale google_session.json because GOOGLE_SESSION_B64 is empty.")
+            except Exception:
+                pass
 
     # Load saved Google session if it exists
     if os.path.exists(_SESSION_FILE):
@@ -210,20 +219,25 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                 if await acct_btn.count() > 0:
                     logger.info("Found saved profile tile, clicking to bypass chooser...")
                     await acct_btn.first.click(force=True, timeout=5000)
-                    await page.wait_for_timeout(2000)
                     
                     # Handle Cloud IP re-auth (Google asking for password again)
+                    # We must wait for the UI to transition, otherwise this checks instantly before it renders!
+                    logger.info("Waiting to see if Google asks for password verification...")
                     pwd_input = page.locator('input[type="password"], input[name="Passwd"]')
-                    if await pwd_input.count() > 0 and await pwd_input.first.is_visible():
+                    try:
+                        await pwd_input.first.wait_for(state="visible", timeout=6000)
                         logger.info("Google requested password re-verification, filling...")
                         if settings.GOOGLE_BOT_PASSWORD:
                             await pwd_input.first.fill(settings.GOOGLE_BOT_PASSWORD)
                             await page.keyboard.press("Enter")
                         else:
                             logger.error("FATAL: Google requested re-verification password but GOOGLE_BOT_PASSWORD is not set in Env!")
+                    except Exception:
+                        logger.info("No password prompt appeared, continuing...")
                     
-                    # wait for it to process the click/login and redirect back to Meet
-                    await page.wait_for_url(lambda url: "meet.google.com" in url, timeout=20_000)
+                    # Wait for it to process the click/login and fully redirect back to Meet natively
+                    # NOTE: We MUST check startswith! The login URL itself contains meet.google.com in the ?continue= param!
+                    await page.wait_for_url(lambda url: url.startswith("https://meet.google.com/"), timeout=20_000)
                     await page.wait_for_timeout(3000)
             except Exception as ex:
                 logger.warning(f"Could not cleanly bypass account chooser: {ex}")
