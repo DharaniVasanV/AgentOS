@@ -16,8 +16,6 @@ set-default-sink meetingsink
 set-default-source silentsrc
 EOF
 
-# Prevent PulseAudio from trying to contact D-Bus (no X11/display in Docker = harmless warning otherwise)
-export DBUS_SESSION_BUS_ADDRESS=disabled
 pulseaudio --start --exit-idle-time=-1 --disallow-exit --log-target=file:/tmp/pulseaudio.log
 sleep 3
 
