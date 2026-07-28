@@ -55,23 +55,20 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
         headless=True,
         args=[
             "--use-fake-ui-for-media-stream",
-            # We purposely do NOT use '--use-fake-device-for-media-stream'
-            # This completely kills the green pacman video and the 1000Hz audio beep at the source!
+            # Keep fake device so Google Meet grants mic/camera permissions headlessly
+            "--use-fake-device-for-media-stream",
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
             "--autoplay-policy=no-user-gesture-required",
             "--disable-features=AudioServiceOutOfProcess",
-            # Critical: Route Chromium audio output to the PulseAudio virtual sink
-            # so ffmpeg can capture it via meetingsink.monitor
-            "--alsa-output-device=pulse",
+            # Force Chromium to use PulseAudio (not ALSA directly) for audio output
+            # start_all.sh sets PULSE_SINK=meetingsink at the OS level so this routes correctly
+            "--disable-features=WebRtcHideLocalIpsWithMdns",
         ],
-        env={
-            # Force Chromium's PulseAudio client to use our virtual meetingsink
-            "PULSE_SINK": "meetingsink",
-            "PULSE_SOURCE": "meetingsink.monitor",
-        }
+        # DO NOT set env= here — inheriting the full OS env means PULSE_SINK/PULSE_SOURCE
+        # set by start_all.sh are automatically picked up by Chromium's PulseAudio client
     )
 
     common_ctx = dict(

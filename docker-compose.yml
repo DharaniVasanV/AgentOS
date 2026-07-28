@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # The dynamically spawned Local Postgres Database
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: vasan5707
+      POSTGRES_DB: meeting_agent
+    ports:
+      # Maps to 5433 strictly so it honors your local setup without conflicts
+      - "5433:5432"
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+
+  # The Unified Bot Application
+  agent:
+    build: .
+    ports:
+      - "10000:10000"
+      - "8000:8000"
+    env_file:
+      - ./email-agent/.env
+    environment:
+      # This dynamically overrides the DATABASE_URL in your .env explicitly 
+      # so the container resolves strictly to the 'db' service above!
+      - DATABASE_URL=postgresql://postgres:vasan5707@db:5432/meeting_agent
+      - GOOGLE_SESSION_B64=  # Leave empty unless injecting a session locally
+    volumes:
+      # Mirrors your local credentials safely so your Chromium bot can authenticate 
+      - ./meeting-agent/google_session.json:/app/google_session.json:ro
+    depends_on:
+      - db
+
+volumes:
+  postgres_data_local:

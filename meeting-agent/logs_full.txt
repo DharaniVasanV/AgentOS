@@ -1,0 +1,28 @@
+﻿Initializing PulseAudio Server...
+17
+Applying internal Database Migrations...
+Booting up Background Meeting Agent...
+Booting up User Dashboard on Public Port...
+2026-07-28 11:14:24 | INFO     | app.main | Starting Meeting Agent
+2026-07-28 11:14:24 | INFO     | app.services.scheduler | Scheduler started, polling every 30 seconds
+INFO:     172.21.0.1:35348 - "GET / HTTP/1.1" 200 OK
+INFO:     172.21.0.1:35352 - "GET /notifications HTTP/1.1" 200 OK
+INFO:     172.21.0.1:35348 - "GET /meetings HTTP/1.1" 200 OK
+INFO:     172.21.0.1:40474 - "POST /meetings/manual HTTP/1.1" 200 OK
+INFO:     172.21.0.1:40474 - "GET /meetings HTTP/1.1" 200 OK
+2026-07-28 11:15:54 | INFO     | app.services.meeting_monitor | Dispatching meeting 79c23581-7e4b-4e73-959e-01a02717bd18 ('Agent Meet 3') for joining
+2026-07-28 11:15:57 | INFO     | app.services.browser | Loading saved Google session from /app/google_session.json
+2026-07-28 11:16:23 | INFO     | app.services.recorder | Starting audio recording for meeting 79c23581-7e4b-4e73-959e-01a02717bd18 -> /tmp/meeting-agent/recordings/79c23581-7e4b-4e73-959e-01a02717bd18.wav
+2026-07-28 11:16:23 | INFO     | app.services.recorder | PulseAudio source 'meetingsink.monitor' confirmed available.
+2026-07-28 11:16:23 | INFO     | app.services.recorder | ffmpeg PID=146 recording to /tmp/meeting-agent/recordings/79c23581-7e4b-4e73-959e-01a02717bd18.wav (log: /tmp/meeting-agent/recordings/79c23581-7e4b-4e73-959e-01a02717bd18_ffmpeg.log)
+2026-07-28 11:16:23 | INFO     | app.services.meeting_joiner | Meeting 79c23581-7e4b-4e73-959e-01a02717bd18: recording for up to 10800 seconds, polling for early end...
+2026-07-28 11:18:00 | INFO     | app.services.meeting_joiner | Meeting 79c23581-7e4b-4e73-959e-01a02717bd18 ended early or bot was removed. Stopping recording.
+2026-07-28 11:18:00 | INFO     | app.services.recorder | Stopping audio recording (pid=146)
+2026-07-28 11:18:02 | INFO     | app.services.whisper_service | Transcribing audio for meeting 79c23581-7e4b-4e73-959e-01a02717bd18 via Groq (whisper-large-v3)
+2026-07-28 11:18:14 | INFO     | httpx | HTTP Request: POST https://api.groq.com/openai/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2026-07-28 11:18:14 | INFO     | app.services.whisper_service | Filtered out hallucinated silence transcript: Thank you. Thank you. Thank you. Thank you.
+2026-07-28 11:18:14 | WARNING  | app.services.whisper_service | Empty or silence-only transcript returned for meeting 79c23581-7e4b-4e73-959e-01a02717bd18
+2026-07-28 11:18:14 | INFO     | app.services.report_service | Generating summary + extraction for meeting 79c23581-7e4b-4e73-959e-01a02717bd18
+2026-07-28 11:18:14 | WARNING  | app.services.summary_service | Empty transcript passed to generate_summary; returning placeholder
+2026-07-28 11:18:14 | INFO     | app.services.report_service | Meeting 79c23581-7e4b-4e73-959e-01a02717bd18: saved report, 0 action items, 0 decisions
+2026-07-28 11:18:14 | INFO     | app.services.attendance_service | Recorded bot attendance for meeting 79c23581-7e4b-4e73-959e-01a02717bd18: 2026-07-28T05:46:23.839387 -> 2026-07-28T05:48:02.066214
