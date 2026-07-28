@@ -304,9 +304,12 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                     aria = (await buttons.nth(i).get_attribute("aria-label") or "").strip().lower()
                     
                     if "ask to join" in text or "join now" in text or "ask to join" in aria or "join now" in aria:
-                        logger.info(f"Found Google Meet Join button matching Text='{text}' Aria='{aria}'. Firing JS click...")
-                        # Run native JS click to bypass Playwright's visibility/overlay checks
-                        await buttons.nth(i).evaluate("node => node.click()")
+                        logger.info(f"Found Google Meet Join button matching Text='{text}' Aria='{aria}'. Dispatching trusted pointer event...")
+                        # Scroll to the element first, then dispatch a TRUSTED PointerEvent.
+                        # Note: JS node.click() is untrusted and Google silently ignores it.
+                        # dispatch_event generates a trusted event that browsers treat as a real click.
+                        await buttons.nth(i).scroll_into_view_if_needed(timeout=3000)
+                        await buttons.nth(i).dispatch_event("click")
                         clicked = True
                         break
             except Exception:
