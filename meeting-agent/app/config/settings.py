@@ -54,11 +54,9 @@ class Settings(BaseSettings):
     BOT_DISPLAY_NAME: str = "Meeting Notes Bot"
 
     # --- Google account for bot login ------------------------------------
-    # Required for Google Meet — headless Chrome without a signed-in account
-    # gets redirected to the Google sign-in page and can never reach the meeting.
-    # Create a dedicated Gmail account and put its credentials here.
-    GOOGLE_BOT_EMAIL: str = ""
-    GOOGLE_BOT_PASSWORD: str = ""
+    # We no longer store bot credentials. We use scripts/generate_google_session.py
+    # to manually authenticate a headed browser and inject the resulting
+    # base64 session file into GOOGLE_SESSION_B64 via the environment.
 
     # --- Storage ----------------------------------------------------------
     RECORDINGS_DIR: str = "/tmp/meeting-agent/recordings"

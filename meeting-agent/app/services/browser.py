@@ -70,17 +70,46 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             ],
         )
 
-        # Always a clean, unauthenticated context — anonymous guest join only.
-        context = await browser.new_context(
-            permissions=["camera", "microphone"],
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 720},
-            locale="en-US",
-        )
+        import os
+        import base64
+        _SESSION_FILE = "/app/google_session.json"
+        
+        # Decode session from env var
+        session_b64 = os.environ.get("GOOGLE_SESSION_B64")
+        if session_b64:
+            try:
+                with open(_SESSION_FILE, "wb") as f:
+                    f.write(base64.b64decode(session_b64))
+                logger.info("Decoded Google Session from GOOGLE_SESSION_B64 env var.")
+            except Exception:
+                logger.exception("Failed to decode GOOGLE_SESSION_B64.")
+        
+        if session_b64 and os.path.exists(_SESSION_FILE):
+            logger.info("Starting browser with authenticated bot session.")
+            context = await browser.new_context(
+                storage_state=_SESSION_FILE,
+                permissions=["camera", "microphone"],
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 720},
+                locale="en-US",
+            )
+        else:
+            logger.info("Starting browser in anonymous guest mode (no valid session provided).")
+            # Always a clean, unauthenticated context — anonymous guest join only.
+            context = await browser.new_context(
+                permissions=["camera", "microphone"],
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 720},
+                locale="en-US",
+            )
 
         # Mask webdriver flag
         await context.add_init_script(
@@ -139,10 +168,17 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
 
         # --- Step 0: Fail fast on states we can't recover from as a guest ---
         if "accounts.google.com" in page.url:
-            logger.error(
-                "Meet redirected to Google sign-in for %s. This meeting likely requires "
-                "a signed-in account — cannot join anonymously.", meeting_url
-            )
+            import os
+            if os.environ.get("GOOGLE_SESSION_B64"):
+                logger.error(
+                    "Meet redirected to Google sign-in for %s. A session file was loaded, "
+                    "but it appears to be expired. Please re-run scripts/generate_google_session.py.", meeting_url
+                )
+            else:
+                logger.error(
+                    "Meet redirected to Google sign-in for %s. This meeting requires "
+                    "a signed-in account, and no session was provided — cannot join anonymously.", meeting_url
+                )
             return False
 
         invalid = page.locator(_INVALID_MEETING_SELECTOR)
