@@ -113,6 +113,14 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
     """)
 
     page = await context.new_page()
+    
+    # Apply full playwright-stealth evasion to prevent Google from rejecting the login
+    try:
+        from playwright_stealth import stealth_async
+        await stealth_async(page)
+    except ImportError:
+        logger.warning("playwright-stealth not installed. Google may reject sign-ins.")
+
     return browser, context, page
 
 

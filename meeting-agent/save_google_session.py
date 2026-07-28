@@ -51,8 +51,15 @@ async def run_session_saver():
         context = await browser.new_context(
             viewport={"width": 1280, "height": 720},
             locale="en-US",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
+        
+        # Inject stealth scripts during session creation as well
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        """)
+        
         await page.goto("https://accounts.google.com/signin", wait_until="domcontentloaded")
 
         # Wait for user to sign in manually via the frontend UI signal
