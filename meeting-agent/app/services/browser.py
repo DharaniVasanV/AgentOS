@@ -275,23 +275,7 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                 pass
 
         # 4. Click the exact Google Meet Join button candidate (with up to 30s polling for React to render)
-        join_candidates = [
-            'div[role="button"]:has-text("Ask to join")',
-            'div[role="button"]:has-text("Join now")',
-            'button:has-text("Ask to join")',
-            'button:has-text("Join now")',
-            'text="Ask to join"',
-            'text="Join now"',
-            'span:has-text("Ask to join")',
-            'span:has-text("Join now")',
-            'button:has-text("Join")',
-            'text="Join"',
-            'button[jsname="Qjft2e"]',
-            'div[jsname="Qjft2e"]',
-            '[aria-label*="Ask to join" i]',
-            '[aria-label*="Join now" i]',
-        ]
-
+        # 4. Find the Join button manually by text and bypass Playwright visibility locks via Native JS
         clicked = False
         name_filled = False
         import time
@@ -311,19 +295,28 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                 except Exception:
                     pass
 
-            for sel in join_candidates:
-                loc = page.locator(sel)
-                if await loc.count() > 0 and await loc.first.is_visible():
-                    logger.info("Found Google Meet Join button matching '%s', clicking...", sel)
-                    await loc.first.click(force=True, timeout=5000)
-                    clicked = True
-                    break
+            # Scan the DOM manually for the exact text (matches Forensic Log success!)
+            buttons = page.locator("button, a, [role='button'], div[jsname='Qjft2e']")
+            try:
+                count = await buttons.count()
+                for i in range(count):
+                    text = (await buttons.nth(i).inner_text() or "").strip().lower()
+                    aria = (await buttons.nth(i).get_attribute("aria-label") or "").strip().lower()
+                    
+                    if "ask to join" in text or "join now" in text or "ask to join" in aria or "join now" in aria:
+                        logger.info(f"Found Google Meet Join button matching Text='{text}' Aria='{aria}'. Firing JS click...")
+                        # Run native JS click to bypass Playwright's visibility/overlay checks
+                        await buttons.nth(i).evaluate("node => node.click()")
+                        clicked = True
+                        break
+            except Exception:
+                pass
             
             if not clicked:
                 await page.wait_for_timeout(1000)  # Sleep 1s and check DOM again
 
         if not clicked:
-            logger.warning("After 30s, no standard Google Meet Join button appeared! Trying blind fallback click...")
+            logger.warning("After 40s DOM scan, no Join button matched! Trying blind fallback click...")
             fallback = page.locator('button[jsname="Qjft2e"]')
             if await fallback.count() > 0:
                 await fallback.first.click(force=True, timeout=5000)
