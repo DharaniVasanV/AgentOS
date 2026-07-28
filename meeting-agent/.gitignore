@@ -5,7 +5,7 @@
 google_auth.json
 google_session.json
 chrome_bot_profile/
-
+session_b64.txt
 # Virtual Environment
 .venv/
 venv/
