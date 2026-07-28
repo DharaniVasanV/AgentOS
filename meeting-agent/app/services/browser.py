@@ -44,20 +44,24 @@ _INVALID_MEETING_SELECTOR = 'text=/check your meeting code|misspelled or the mee
 
 
 async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
-    display = Display(visible=0, size=(1280, 720))
-    try:
-        display.start()
-    except Exception as ex:
-        raise RuntimeError(
-            "Failed to start Xvfb virtual display. Make sure the 'xvfb' system "
-            "package is installed in this image."
-        ) from ex
+    import sys
+    import os
+    import base64
+
+    display = None
+    if sys.platform != "win32":
+        try:
+            display = Display(visible=0, size=(1280, 720))
+            display.start()
+        except Exception as ex:
+            logger.warning("Xvfb virtual display not available (running in non-Xvfb environment): %s", ex)
 
     playwright = await async_playwright().start()
     browser = None
     try:
-        browser = await playwright.chromium.launch(
-            headless=False,  # headed-under-Xvfb — see note on _active_displays above
+        # Launch Chromium (or native Chrome if available locally)
+        launch_kwargs = dict(
+            headless=False if sys.platform == "win32" or display else True,
             args=[
                 "--use-fake-ui-for-media-stream",      # auto-accept mic/camera permission prompt
                 "--use-fake-device-for-media-stream",  # provide a fake capture device so getUserMedia succeeds
@@ -69,32 +73,34 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
                 "--disable-features=WebRtcHideLocalIpsWithMdns",
             ],
         )
+        try:
+            browser = await playwright.chromium.launch(channel="chrome", **launch_kwargs)
+        except Exception:
+            browser = await playwright.chromium.launch(**launch_kwargs)
 
-        import os
-        import base64
-        _SESSION_FILE = "/app/google_session.json"
+        # Cross-platform path for google_session.json
+        session_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "google_session.json"))
         
-        # Decode session from env var
+        # Decode session from env var if present
         session_b64 = os.environ.get("GOOGLE_SESSION_B64")
         if session_b64:
             try:
-                with open(_SESSION_FILE, "wb") as f:
+                with open(session_file, "wb") as f:
                     f.write(base64.b64decode(session_b64))
                 logger.info("Decoded Google Session from GOOGLE_SESSION_B64 env var.")
             except Exception:
                 logger.exception("Failed to decode GOOGLE_SESSION_B64.")
         
-        if session_b64 and os.path.exists(_SESSION_FILE):
-            logger.info("Starting browser with authenticated bot session.")
+        if os.path.exists(session_file):
+            logger.info("Starting browser with authenticated bot session (%s).", session_file)
             context = await browser.new_context(
-                storage_state=_SESSION_FILE,
+                storage_state=session_file,
                 permissions=["camera", "microphone"],
                 viewport={"width": 1280, "height": 720},
                 locale="en-US",
             )
         else:
-            logger.info("Starting browser in anonymous guest mode (no valid session provided).")
-            # Always a clean, unauthenticated context — anonymous guest join only.
+            logger.info("Starting browser in anonymous guest mode (no google_session.json found).")
             context = await browser.new_context(
                 permissions=["camera", "microphone"],
                 viewport={"width": 1280, "height": 720},
@@ -116,14 +122,16 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             pass
 
         _active_playwrights[id(browser)] = playwright
-        _active_displays[id(browser)] = display
+        if display:
+            _active_displays[id(browser)] = display
         return browser, context, page
 
     except Exception:
         if browser is not None:
             await browser.close()
         await playwright.stop()
-        display.stop()
+        if display:
+            display.stop()
         raise
 
 
