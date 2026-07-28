@@ -6,18 +6,31 @@ set -e
 
 echo "Initializing PulseAudio Server..."
 rm -rf /tmp/pulse-* /run/pulse /root/.config/pulse/*/native
-pulseaudio -D --exit-idle-time=-1 --disallow-exit --log-target=stderr &
+
+# Write a proper PulseAudio config to avoid daemon defaulting to error
+mkdir -p /root/.config/pulse
+cat > /root/.config/pulse/default.pa << 'EOF'
+load-module module-null-sink sink_name=meetingsink sink_properties=device.description=meetingsink
+load-module module-null-source source_name=silentsrc
+set-default-sink meetingsink
+set-default-source silentsrc
+EOF
+
+pulseaudio --start --exit-idle-time=-1 --disallow-exit --log-target=file:/tmp/pulseaudio.log
 sleep 3
 
-# Create a null virtual sink that acts as our capture device
-pactl load-module module-null-sink sink_name=meetingsink sink_properties=device.description=meetingsink || true
-# Make meetingsink the system default so ALL apps (including Chromium) use it
-pactl set-default-sink meetingsink
-# Also set the monitor as default source so apps that read audio get it from the sink
-pactl set-default-source meetingsink.monitor
+# Verify PulseAudio is up
+if ! pactl info > /dev/null 2>&1; then
+    echo "ERROR: PulseAudio failed to start!" && cat /tmp/pulseaudio.log
+    exit 1
+fi
+
+# Export so every child process (including Chromium) inherits the correct sink
 export PULSE_SINK=meetingsink
-export PULSE_SOURCE=meetingsink.monitor
-echo "PulseAudio ready. Default sink: meetingsink"
+export PULSE_SOURCE=silentsrc
+echo "PulseAudio ready. Default sink: $(pactl info | grep 'Default Sink')"
+echo "PulseAudio ready. Default source: $(pactl info | grep 'Default Source')"
+
 
 cd /app/meeting-agent
 echo "Applying internal Database Migrations..."

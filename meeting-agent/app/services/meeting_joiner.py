@@ -102,6 +102,21 @@ async def handle_meeting(meeting_id) -> None:
         await crud.set_meeting_status(session, meeting.id, "in_progress")
         await crud.add_audit_log(session, meeting.id, "joined", f"platform={platform}")
 
+    # Force-reroute ALL Chromium audio sink-inputs to meetingsink so ffmpeg can capture them.
+    # This is belt-and-suspenders: even if Chromium defaulted to a different sink at launch,
+    # this moves every active audio stream into our virtual capture sink.
+    try:
+        reroute = await asyncio.create_subprocess_exec(
+            "bash", "-c",
+            "pactl list short sink-inputs | awk '{print $1}' | xargs -I{} pactl move-sink-input {} meetingsink",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await reroute.wait()
+        logger.info("Rerouted all PulseAudio sink-inputs to meetingsink")
+    except Exception:
+        logger.warning("Could not reroute PulseAudio sink-inputs (non-fatal)")
+
     audio_path, ffmpeg_process = await recorder.start_recording(meeting.id)
 
     wait_seconds = _seconds_until_meeting_end(meeting)

@@ -54,21 +54,23 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
     browser = await playwright.chromium.launch(
         headless=True,
         args=[
+            # Grant mic/camera permissions without a dialog, but do NOT use fake device.
+            # Fake device bypasses PulseAudio entirely — Chromium would internally route
+            # all audio (including received WebRTC audio) to its own fake device, making
+            # the PulseAudio meetingsink always silent.
             "--use-fake-ui-for-media-stream",
-            # Keep fake device so Google Meet grants mic/camera permissions headlessly
-            "--use-fake-device-for-media-stream",
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
             "--autoplay-policy=no-user-gesture-required",
-            "--disable-features=AudioServiceOutOfProcess",
-            # Force Chromium to use PulseAudio (not ALSA directly) for audio output
-            # start_all.sh sets PULSE_SINK=meetingsink at the OS level so this routes correctly
+            # Do NOT disable AudioServiceOutOfProcess - the out-of-process audio service
+            # is what actually connects Chromium to the PulseAudio daemon
             "--disable-features=WebRtcHideLocalIpsWithMdns",
+            # Ensure Chromium uses ALSA → PulseAudio plugin (not direct ALSA)
+            "--use-gl=swiftshader",
         ],
-        # DO NOT set env= here — inheriting the full OS env means PULSE_SINK/PULSE_SOURCE
-        # set by start_all.sh are automatically picked up by Chromium's PulseAudio client
+        # Inherit full OS env so PULSE_SINK/PULSE_SOURCE from start_all.sh are visible to Chromium
     )
 
     common_ctx = dict(
