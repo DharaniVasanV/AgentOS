@@ -193,6 +193,30 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
         await page.goto(meeting_url, wait_until="domcontentloaded", timeout=60_000)
         await page.wait_for_timeout(4000)
 
+        # 0. Handle Google Cloud IP Security Interception (Account Chooser)
+        if "accounts.google.com" in page.url:
+            logger.warning("Google intercepted the meeting URL with a security chooser (likely due to Render IP change).")
+            # Click the saved account profile to continue
+            acct_btn = page.locator('div[data-email], li[data-identifier], div[data-identifier]')
+            try:
+                if await acct_btn.count() > 0:
+                    logger.info("Found saved profile tile, clicking to bypass chooser...")
+                    await acct_btn.first.click(force=True, timeout=5000)
+                    await page.wait_for_timeout(2000)
+                    
+                    # Handle Cloud IP re-auth (Google asking for password again)
+                    pwd_input = page.locator('input[type="password"], input[name="Passwd"]')
+                    if await pwd_input.count() > 0 and await pwd_input.first.is_visible():
+                        logger.info("Google requested password re-verification, filling...")
+                        await pwd_input.first.fill(settings.GOOGLE_BOT_PASSWORD)
+                        await page.keyboard.press("Enter")
+                    
+                    # wait for it to process the click/login and redirect back to Meet
+                    await page.wait_for_url(lambda url: "meet.google.com" in url, timeout=20_000)
+                    await page.wait_for_timeout(3000)
+            except Exception as ex:
+                logger.warning(f"Could not cleanly bypass account chooser: {ex}")
+
         # 1. Dismiss any "Got it" / tracking / permission toasts or modals
         for popup_text in ["Got it", "Dismiss", "Continue without", "Close", "Allow"]:
             try:
