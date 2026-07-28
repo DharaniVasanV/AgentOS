@@ -21,6 +21,7 @@ meeting_joiner.py -> join_meeting(meeting_url, platform, bot_name)
 """
 
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext, Playwright
+from pyvirtualdisplay import Display
 
 from app.utils.logger import get_logger
 
@@ -30,6 +31,12 @@ logger = get_logger(__name__)
 # can stop it (browser.close() alone does not stop the driver subprocess).
 _active_playwrights: dict[int, Playwright] = {}
 
+# Tracks the virtual (Xvfb) display behind each Browser so leave_meeting() can
+# stop it. We run headed-under-Xvfb rather than headless because Google's
+# properties actively fingerprint headless Chromium and gate anonymous guest
+# access behind a sign-in wall when they detect it.
+_active_displays: dict[int, Display] = {}
+
 # Reused selectors
 _IN_CALL_SELECTOR = '[aria-label*="Leave call" i], [aria-label*="Leave" i], button[jsname="CQeAdf"]'
 _DENIED_TEXT_SELECTOR = 'text=/denied your request|can.?t join this call|removed you from the call|no longer available/i'
@@ -37,11 +44,20 @@ _INVALID_MEETING_SELECTOR = 'text=/check your meeting code|misspelled or the mee
 
 
 async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
+    display = Display(visible=0, size=(1280, 720))
+    try:
+        display.start()
+    except Exception as ex:
+        raise RuntimeError(
+            "Failed to start Xvfb virtual display. Make sure the 'xvfb' system "
+            "package is installed in this image."
+        ) from ex
+
     playwright = await async_playwright().start()
     browser = None
     try:
         browser = await playwright.chromium.launch(
-            headless=True,
+            headless=False,  # headed-under-Xvfb — see note on _active_displays above
             args=[
                 "--use-fake-ui-for-media-stream",      # auto-accept mic/camera permission prompt
                 "--use-fake-device-for-media-stream",  # provide a fake capture device so getUserMedia succeeds
@@ -51,7 +67,6 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
                 "--disable-dev-shm-usage",
                 "--autoplay-policy=no-user-gesture-required",
                 "--disable-features=WebRtcHideLocalIpsWithMdns",
-                "--use-gl=swiftshader",
             ],
         )
 
@@ -82,12 +97,14 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             pass
 
         _active_playwrights[id(browser)] = playwright
+        _active_displays[id(browser)] = display
         return browser, context, page
 
     except Exception:
         if browser is not None:
             await browser.close()
         await playwright.stop()
+        display.stop()
         raise
 
 
@@ -186,6 +203,18 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                     if t:
                         texts.append(t)
                 logger.error("No join button found. Visible buttons were: %s", texts)
+                logger.error("PAGE URL at failure: %s", page.url)
+                logger.error("PAGE TITLE at failure: %s", await page.title())
+                try:
+                    body_text = await page.locator("body").inner_text()
+                    logger.error("PAGE BODY TEXT (first 500 chars): %s", body_text[:500].replace("\n", " | "))
+                except Exception:
+                    pass
+                try:
+                    await page.screenshot(path="/tmp/meet_join_failure.png")
+                    logger.error("Saved failure screenshot to /tmp/meet_join_failure.png")
+                except Exception:
+                    pass
                 return False
             join_btn = found
 
@@ -312,11 +341,14 @@ async def leave_meeting(browser: Browser | None) -> None:
     if browser is None:
         return
     playwright = _active_playwrights.pop(id(browser), None)
+    display = _active_displays.pop(id(browser), None)
     try:
         await browser.close()
     finally:
         if playwright is not None:
             await playwright.stop()
+        if display is not None:
+            display.stop()
 
 
 async def is_meeting_active(page: Page | None, platform: str) -> bool:

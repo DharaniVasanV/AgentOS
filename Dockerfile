@@ -30,6 +30,7 @@ RUN pip install --no-cache-dir -r email_req.txt -r meet_req.txt
 
 # Finish Playwright setup
 RUN playwright install chromium
+RUN apt-get update && apt-get install -y xvfb
 
 # Copy all application code across both modules
 COPY . .
