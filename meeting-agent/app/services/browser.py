@@ -110,12 +110,14 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
         logger.info("Loading saved Google session from %s", _SESSION_FILE)
         context = await browser.new_context(storage_state=_SESSION_FILE, **common_ctx)
     else:
-        logger.warning(
-            "No Google session found at %s. "
-            "Click 'Connect Bot Account' on the dashboard or run: python save_google_session.py",
-            _SESSION_FILE,
-        )
+        logger.info("Running in Anonymous Guest Mode (No google_session file found).")
         context = await browser.new_context(**common_ctx)
+
+    await context.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    """)
+    # ... SNIP ... we are doing two separate chunks, multi_replace is better here but I will use replace twice. Wait, I can only replace one contiguous chunk per tool call. I will replace the first chunk, then the second.
+    # ACTUALLY replacing a massive chunk from line 104 to 289 is bad practice. I will fail this and use multi_replace.
 
     await context.add_init_script("""
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
