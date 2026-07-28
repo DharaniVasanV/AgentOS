@@ -208,8 +208,11 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                     pwd_input = page.locator('input[type="password"], input[name="Passwd"]')
                     if await pwd_input.count() > 0 and await pwd_input.first.is_visible():
                         logger.info("Google requested password re-verification, filling...")
-                        await pwd_input.first.fill(settings.GOOGLE_BOT_PASSWORD)
-                        await page.keyboard.press("Enter")
+                        if settings.GOOGLE_BOT_PASSWORD:
+                            await pwd_input.first.fill(settings.GOOGLE_BOT_PASSWORD)
+                            await page.keyboard.press("Enter")
+                        else:
+                            logger.error("FATAL: Google requested re-verification password but GOOGLE_BOT_PASSWORD is not set in Env!")
                     
                     # wait for it to process the click/login and redirect back to Meet
                     await page.wait_for_url(lambda url: "meet.google.com" in url, timeout=20_000)
