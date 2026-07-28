@@ -62,7 +62,15 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             "--disable-dev-shm-usage",
             "--autoplay-policy=no-user-gesture-required",
             "--disable-features=AudioServiceOutOfProcess",
+            # Critical: Route Chromium audio output to the PulseAudio virtual sink
+            # so ffmpeg can capture it via meetingsink.monitor
+            "--alsa-output-device=pulse",
         ],
+        env={
+            # Force Chromium's PulseAudio client to use our virtual meetingsink
+            "PULSE_SINK": "meetingsink",
+            "PULSE_SOURCE": "meetingsink.monitor",
+        }
     )
 
     common_ctx = dict(

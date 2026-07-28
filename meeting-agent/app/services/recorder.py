@@ -56,8 +56,23 @@ async def start_recording(meeting_id: uuid.UUID) -> tuple[str, asyncio.subproces
     Caller (meeting_joiner.py) is responsible for calling stop_recording
     once the meeting ends or the max-duration safety cap is hit."""
     output_path = _recording_path(meeting_id)
+    log_path = output_path.replace(".wav", "_ffmpeg.log")
     logger.info("Starting audio recording for meeting %s -> %s", meeting_id, output_path)
 
+    # Pre-flight: confirm PulseAudio sink is available
+    check = await asyncio.create_subprocess_exec(
+        "pactl", "list", "short", "sources",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await check.communicate()
+    sources = stdout.decode()
+    if _PULSE_MONITOR_SOURCE not in sources:
+        logger.error("PulseAudio source '%s' NOT FOUND! Available: %s", _PULSE_MONITOR_SOURCE, sources)
+    else:
+        logger.info("PulseAudio source '%s' confirmed available.", _PULSE_MONITOR_SOURCE)
+
+    log_file = open(log_path, "wb")
     process = await asyncio.create_subprocess_exec(
         "ffmpeg",
         "-y",
@@ -67,8 +82,9 @@ async def start_recording(meeting_id: uuid.UUID) -> tuple[str, asyncio.subproces
         "-ar", "16000",  # 16kHz mono is plenty for speech and keeps Whisper uploads small
         output_path,
         stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=log_file,  # Write ffmpeg output to a log file for diagnosis
     )
+    logger.info("ffmpeg PID=%s recording to %s (log: %s)", process.pid, output_path, log_path)
     return output_path, process
 
 
