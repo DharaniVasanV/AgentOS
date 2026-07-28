@@ -194,24 +194,24 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                 await got_it.first.click(timeout=3000)
         except Exception:
             pass
+        # Critical Fix: Docker networks & Chromium emulation are very slow to render Google Meet's heavy React DOM!
+        # We MUST forcefully wait for the core UI (like the Join button) to actually exist before we can safely mute!
+        join_btn = page.locator('button:has-text("Ask to join"), button:has-text("Join now")')
+        await join_btn.first.wait_for(state="visible", timeout=30_000)
+        
+        # Explicitly wait another 2 seconds to ensure any internal React hydration has fully finalized
+        await page.wait_for_timeout(2000)
 
-        # Google Meet constantly changes the aria-labels (e.g., "Turn off mic" vs "Turn off microphone").
-        # We will use universally bulletproof Keyboard Shortcuts first:
-        await page.locator('body').focus()
-        await page.keyboard.press("Control+d") # Mute Mic
-        await page.wait_for_timeout(500)
-        await page.keyboard.press("Control+e") # Mute Camera
-        await page.wait_for_timeout(500)
-
-        # Belt-and-suspenders DOM brute force: Click any button actively stating "Turn off" for AV
+        # Now that the DOM is fully hydrated, Belt-and-suspenders brute force: Click any button stating "Turn off" for AV
         for label in ["microphone", "mic", "camera", "video"]:
-            btns = page.locator(f'button[aria-label*="{label}" i]')
+            btns = page.locator(f'[aria-label*="{label}" i]')
             try:
                 count = await btns.count()
                 for i in range(count):
                     aria = await btns.nth(i).get_attribute("aria-label")
                     if aria and "turn off" in aria.lower():
-                        await btns.nth(i).click(timeout=2000)
+                        await btns.nth(i).click(force=True, timeout=3000)
+                        await page.wait_for_timeout(300)
             except Exception:
                 pass
 
