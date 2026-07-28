@@ -195,6 +195,26 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
         except Exception:
             pass
 
+        # Google Meet constantly changes the aria-labels (e.g., "Turn off mic" vs "Turn off microphone").
+        # We will use universally bulletproof Keyboard Shortcuts first:
+        await page.locator('body').focus()
+        await page.keyboard.press("Control+d") # Mute Mic
+        await page.wait_for_timeout(500)
+        await page.keyboard.press("Control+e") # Mute Camera
+        await page.wait_for_timeout(500)
+
+        # Belt-and-suspenders DOM brute force: Click any button actively stating "Turn off" for AV
+        for label in ["microphone", "mic", "camera", "video"]:
+            btns = page.locator(f'button[aria-label*="{label}" i]')
+            try:
+                count = await btns.count()
+                for i in range(count):
+                    aria = await btns.nth(i).get_attribute("aria-label")
+                    if aria and "turn off" in aria.lower():
+                        await btns.nth(i).click(timeout=2000)
+            except Exception:
+                pass
+
         # Ensure we always type the name if requested, and explicitly blur to trigger React state
         name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i]')
         if await name_input.count() > 0:
@@ -205,15 +225,6 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                 await page.wait_for_timeout(500)
             except Exception:
                 pass
-
-        # Mute mic/camera toggles before asking to join, if present.
-        for label in ["Turn off microphone", "Turn off camera"]:
-            btn = page.locator(f'[aria-label*="{label}" i]')
-            if await btn.count() > 0:
-                try:
-                    await btn.first.click(timeout=3000)
-                except Exception:
-                    pass
 
         join_btn = page.locator('button:has-text("Ask to join"), button:has-text("Join now")')
         await join_btn.first.click(timeout=_JOIN_TIMEOUT_MS)
