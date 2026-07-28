@@ -305,24 +305,30 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
         except Exception:
             logger.warning("JS wait_for_function timed out — button may have appeared late, trying force click anyway")
 
-        # Now find and force-click the button using Playwright's locator
+        # Now find the button's exact screen position using JS and click via real mouse movement
         clicked = False
-        for selector in [
-            'button:has-text("Ask to join")',
-            'button:has-text("Join now")',
-            '[role="button"]:has-text("Ask to join")',
-            '[role="button"]:has-text("Join now")',
-        ]:
-            try:
-                loc = page.locator(selector)
-                if await loc.count() > 0:
-                    logger.info("Clicking '%s' with force=True...", selector)
-                    await loc.first.click(force=True, timeout=10_000)
-                    clicked = True
-                    break
-            except Exception:
-                pass
+        result = await page.evaluate("""() => {
+            const all = document.querySelectorAll('button, [role="button"], a, span, div');
+            for (const el of all) {
+                const t = (el.textContent || '').trim().toLowerCase();
+                if (t === 'ask to join' || t === 'join now') {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, text: t };
+                    }
+                }
+            }
+            return null;
+        }""")
 
+        if result:
+            x, y = result['x'], result['y']
+            logger.info(f"Clicking '{result['text']}' button at screen coords ({x:.0f}, {y:.0f}) via real mouse...")
+            await page.mouse.move(x, y)
+            await page.wait_for_timeout(200)
+            await page.mouse.click(x, y)
+            clicked = True
+        
         if not clicked:
             logger.error("FATAL: Could not find ANY Join button to click on the screen!")
             raise Exception("No Join button visible on screen after 90s wait.")
