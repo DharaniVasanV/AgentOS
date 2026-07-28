@@ -237,14 +237,15 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
 
         # 4. Click the exact Google Meet Join button candidate
         join_candidates = [
-            'button[jsname="Qjft2e"]',
             'button:has-text("Ask to join")',
             'button:has-text("Join now")',
-            'button:has-text("Rejoin")',
             'span:has-text("Ask to join")',
             'span:has-text("Join now")',
-            '[aria-label="Ask to join"]',
-            '[aria-label="Join now"]',
+            'button:has-text("Join")',
+            'span:has-text("Join")',
+            'button[jsname="Qjft2e"]',
+            '[aria-label*="Ask to join" i]',
+            '[aria-label*="Join now" i]',
         ]
 
         clicked = False
@@ -257,14 +258,18 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                 break
 
         if not clicked:
-            logger.warning("No standard Google Meet Join button was visible, attempting fallback click on jsname='Qjft2e'...")
+            logger.warning("Could not clearly click a Join button. Searching for fallback...")
             fallback = page.locator('button[jsname="Qjft2e"]')
             if await fallback.count() > 0:
-                await fallback.first.click(force=True, timeout=10000)
+                await fallback.first.click(force=True, timeout=5000)
 
         # 5. Wait to enter meeting or waiting room
+        # We must wait for the "Leave" button to appear. If we are placed in a waiting room
+        # ("Asking to join..."), we may wait here for a LONG time until the host admits us.
+        # We set this timeout to 15 minutes to avoid dropping out if the host is delayed.
+        logger.info("Waiting for host to admit bot (or for immediate join) - timeout 15m...")
         leave_selector = '[aria-label*="Leave call" i], [aria-label*="Leave" i], button[jsname="CQeAdf"]'
-        await page.locator(leave_selector).first.wait_for(timeout=60_000)
+        await page.locator(leave_selector).first.wait_for(timeout=900_000)
         logger.info("Successfully joined Google Meet call!")
         return True
     except Exception as e:
