@@ -55,7 +55,8 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
         headless=True,
         args=[
             "--use-fake-ui-for-media-stream",
-            "--use-fake-device-for-media-stream",
+            # We purposely do NOT use '--use-fake-device-for-media-stream'
+            # This completely kills the green pacman video and the 1000Hz audio beep at the source!
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
