@@ -1,26 +1,10 @@
 """
 app/services/browser.py
 
-*** THIS IS THE FILE MOST LIKELY TO NEED ADJUSTMENT AGAINST YOUR REAL
-*** MEETING LINKS. Google Meet's DOM is relatively stable; Zoom and
-*** Teams change button text/labels/waiting-room flows often enough
-*** that hardcoded selectors WILL eventually break. Treat the
-*** selectors below as a working starting point, not a guarantee.
-
 Purpose
 -------
-Uses Playwright to launch a headless(ish) Chromium instance, disable
-camera/mic, navigate to a meeting URL, and click through whatever
-"join" flow that platform requires.
-
-Responsibilities
-----------------
-- launch_browser(): one Chromium instance per meeting, camera/mic
-  permissions denied at the context level (belt-and-suspenders on top
-  of also disabling them at the OS/driver level)
-- join_meeting(): dispatches to the platform-specific join function
-- Each platform function returns True/False for success so
-  meeting_joiner.py can retry / mark the meeting failed
+Uses Playwright to launch a headless Chromium instance, navigate to a
+meeting URL, and click through the join flow for Google Meet, Zoom, or Teams.
 
 Flow
 ----
@@ -28,11 +12,7 @@ meeting_joiner.py -> join_meeting(meeting_url, platform, bot_name)
     -> launch_browser()
     -> page.goto(meeting_url)
     -> platform-specific join steps
-    -> return (success: bool, page: Page | None, browser: Browser | None)
-
-Dependencies
-------------
-playwright.async_api
+    -> return (success: bool, browser: Browser | None, page: Page | None)
 """
 
 import os
@@ -45,8 +25,7 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-_JOIN_TIMEOUT_MS = 20_000
-_SESSION_FILE = "/app/google_session.json"  # path inside Docker container
+_SESSION_FILE = "/app/google_session.json"
 
 
 async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
@@ -54,28 +33,19 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
     browser = await playwright.chromium.launch(
         headless=True,
         args=[
-            # Grant mic/camera permissions without a dialog, but do NOT use fake device.
-            # Fake device bypasses PulseAudio entirely — Chromium would internally route
-            # all audio (including received WebRTC audio) to its own fake device, making
-            # the PulseAudio meetingsink always silent.
-            "--use-fake-ui-for-media-stream",
+            "--use-fake-ui-for-media-stream",   # auto-grant mic/camera without dialog
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
             "--autoplay-policy=no-user-gesture-required",
-            # Do NOT disable AudioServiceOutOfProcess - the out-of-process audio service
-            # is what actually connects Chromium to the PulseAudio daemon
             "--disable-features=WebRtcHideLocalIpsWithMdns",
-            # Ensure Chromium uses ALSA → PulseAudio plugin (not direct ALSA)
             "--use-gl=swiftshader",
         ],
-        # Inherit full OS env so PULSE_SINK/PULSE_SOURCE from start_all.sh are visible to Chromium
     )
 
     common_ctx = dict(
         permissions=["camera", "microphone"],
-        geolocation=None,
         user_agent=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -85,166 +55,84 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
         locale="en-US",
     )
 
-    # --- CLOUD DEPLOYMENT SUPPORT: Build json from Base64 ENV if provided ---
+    # Decode session from env var (always refresh — don't rely on stale disk files)
     session_b64 = os.environ.get("GOOGLE_SESSION_B64")
     if session_b64:
         import base64
         try:
             with open(_SESSION_FILE, "wb") as f:
                 f.write(base64.b64decode(session_b64))
-            logger.info("Successfully decoded Google Session from Environment Variable!")
+            logger.info("Decoded Google Session from GOOGLE_SESSION_B64 env var.")
         except Exception:
             logger.exception("Failed to decode GOOGLE_SESSION_B64.")
     else:
-        # Ensure we don't accidentally load a stale session from a previous Render build
-        # if the user specifically removed the environment variable to test Guest Mode!
+        # No session env var → delete any stale file so we always run in guest mode
         if os.path.exists(_SESSION_FILE):
             try:
                 os.remove(_SESSION_FILE)
-                logger.info("Deleted stale google_session.json because GOOGLE_SESSION_B64 is empty.")
+                logger.info("Removed stale google_session.json — running as Anonymous Guest.")
             except Exception:
                 pass
 
-    # Load saved Google session if it exists
     if os.path.exists(_SESSION_FILE):
         logger.info("Loading saved Google session from %s", _SESSION_FILE)
         context = await browser.new_context(storage_state=_SESSION_FILE, **common_ctx)
     else:
-        logger.info("Running in Anonymous Guest Mode (No google_session file found).")
+        logger.info("Running in Anonymous Guest Mode.")
         context = await browser.new_context(**common_ctx)
 
-    await context.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    """)
-    # ... SNIP ... we are doing two separate chunks, multi_replace is better here but I will use replace twice. Wait, I can only replace one contiguous chunk per tool call. I will replace the first chunk, then the second.
-    # ACTUALLY replacing a massive chunk from line 104 to 289 is bad practice. I will fail this and use multi_replace.
-
-    await context.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    """)
+    # Mask webdriver flag
+    await context.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+    )
 
     page = await context.new_page()
-    
-    # Apply full playwright-stealth evasion to prevent Google from rejecting the login
+
+    # Apply playwright-stealth if available
     try:
         from playwright_stealth import stealth_async
         await stealth_async(page)
     except ImportError:
-        logger.warning("playwright-stealth not installed. Google may reject sign-ins.")
+        pass
 
     return browser, context, page
 
 
-async def _google_sign_in(page: Page) -> bool:
-    """Sign in to Google with the bot credentials before joining Meet.
-    Returns True if login succeeded, False if credentials are missing or login failed."""
-    email = settings.GOOGLE_BOT_EMAIL
-    password = settings.GOOGLE_BOT_PASSWORD
-
-    if not email or not password:
-        logger.warning("GOOGLE_BOT_EMAIL / GOOGLE_BOT_PASSWORD not set — bot will join as guest.")
-        return False
-
-    try:
-        logger.info("Signing in to Google as %s", email)
-        await page.goto(
-            "https://accounts.google.com/signin/v2/identifier",
-            wait_until="networkidle",
-            timeout=30_000,
-        )
-
-        # Handle "Choose an account" screen (shown when cookies from a prior session exist)
-        use_another = page.locator('li[data-identifier*="@"], [data-email], div:has-text("Use another account")')
-        if await use_another.count() > 0:
-            another_btn = page.locator('div:has-text("Use another account")')
-            if await another_btn.count() > 0:
-                await another_btn.last.click()
-                await page.wait_for_timeout(2000)
-
-        # Wait for the email input to actually appear
-        await page.wait_for_selector(
-            'input[type="email"], input[name="Email"]',
-            state="visible",
-            timeout=20_000,
-        )
-
-        email_input = page.locator('input[type="email"], input[name="Email"]').first
-        await email_input.click()
-        await email_input.fill(email)
-        await page.wait_for_timeout(500)
-
-        # Click Next
-        await page.locator('#identifierNext, button:has-text("Next")').first.click()
-
-        # Wait for password field
-        await page.wait_for_selector(
-            'input[type="password"], input[name="Passwd"]',
-            state="visible",
-            timeout=15_000,
-        )
-
-        pwd_input = page.locator('input[type="password"], input[name="Passwd"]').first
-        await pwd_input.click()
-        await pwd_input.fill(password)
-        await page.wait_for_timeout(500)
-
-        # Click Next / Sign in
-        await page.locator('#passwordNext, button:has-text("Next")').first.click()
-
-        # Wait for redirect away from accounts.google.com
-        await page.wait_for_url(
-            lambda url: "accounts.google.com" not in url,
-            timeout=20_000,
-        )
-        logger.info("Google sign-in successful")
-        return True
-    except Exception:
-        logger.exception("Google sign-in failed — proceeding as guest")
-        return False
-
-
 async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool:
     try:
-        # Authentication is handled at launch time via the saved session file
-        # (loaded in launch_browser). No sign-in needed here.
-
-        # Use a longer timeout — Docker network can be slow loading Meet
+        logger.info("Navigating to Google Meet: %s", meeting_url)
         await page.goto(meeting_url, wait_until="domcontentloaded", timeout=60_000)
-        await page.wait_for_timeout(4000)
+        await page.wait_for_timeout(3000)
 
-        # 0. Handle Google Cloud IP Security Interception (Account Chooser)
+        # --- Step 0: Handle Google security interception (account chooser) ---
         if "accounts.google.com" in page.url:
-            logger.warning("Google intercepted the meeting URL with a security chooser (likely due to Render IP change).")
-            # Click the saved account profile to continue
+            logger.warning("Google security intercepted the URL. Attempting to bypass account chooser...")
             acct_btn = page.locator('div[data-email], li[data-identifier], div[data-identifier]')
             try:
                 if await acct_btn.count() > 0:
-                    logger.info("Found saved profile tile, clicking to bypass chooser...")
                     await acct_btn.first.click(force=True, timeout=5000)
-                    
-                    # Handle Cloud IP re-auth (Google asking for password again)
-                    # We must wait for the UI to transition, otherwise this checks instantly before it renders!
-                    logger.info("Waiting to see if Google asks for password verification...")
-                    pwd_input = page.locator('input[type="password"], input[name="Passwd"]')
+                    await page.wait_for_timeout(2000)
+                    # Handle re-auth password prompt
+                    pwd_input = page.locator('input[type="password"]')
                     try:
-                        await pwd_input.first.wait_for(state="visible", timeout=6000)
-                        logger.info("Google requested password re-verification, filling...")
+                        await pwd_input.first.wait_for(state="visible", timeout=5000)
                         if settings.GOOGLE_BOT_PASSWORD:
                             await pwd_input.first.fill(settings.GOOGLE_BOT_PASSWORD)
                             await page.keyboard.press("Enter")
                         else:
-                            logger.error("FATAL: Google requested re-verification password but GOOGLE_BOT_PASSWORD is not set in Env!")
+                            logger.error("Google requires password but GOOGLE_BOT_PASSWORD is not set!")
                     except Exception:
-                        logger.info("No password prompt appeared, continuing...")
-                    
-                    # Wait for it to process the click/login and fully redirect back to Meet natively
-                    # NOTE: We MUST check startswith! The login URL itself contains meet.google.com in the ?continue= param!
-                    await page.wait_for_url(lambda url: url.startswith("https://meet.google.com/"), timeout=20_000)
+                        pass  # No password prompt, that's fine
+                    # Wait to land back on meet.google.com
+                    await page.wait_for_url(
+                        lambda url: url.startswith("https://meet.google.com/"),
+                        timeout=20_000
+                    )
                     await page.wait_for_timeout(3000)
             except Exception as ex:
-                logger.warning(f"Could not cleanly bypass account chooser: {ex}")
+                logger.warning("Could not bypass account chooser: %s", ex)
 
-        # 1. Dismiss any "Got it" / tracking / permission toasts or modals
+        # --- Step 1: Dismiss permission/cookie popups ---
         for popup_text in ["Got it", "Dismiss", "Continue without", "Close", "Allow"]:
             try:
                 pop = page.locator(f'button:has-text("{popup_text}")')
@@ -253,155 +141,119 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
             except Exception:
                 pass
 
-        # 3. Mute camera & mic via hotkeys + DOM clicks prior to clicking join
+        # --- Step 2: Fill guest name if prompted (unlocks the Join button) ---
+        await page.wait_for_timeout(2000)
         try:
-            await page.keyboard.press("Control+d")
-            await page.wait_for_timeout(300)
-            await page.keyboard.press("Control+e")
-            await page.wait_for_timeout(300)
-        except Exception:
-            pass
-
-        for label in ["microphone", "mic", "camera", "video"]:
-            btns = page.locator(f'[aria-label*="{label}" i]')
-            try:
-                count = await btns.count()
-                for i in range(count):
-                    aria = await btns.nth(i).get_attribute("aria-label")
-                    if aria and "turn off" in aria.lower():
-                        await btns.nth(i).click(force=True, timeout=2000)
-                        await page.wait_for_timeout(200)
-            except Exception:
-                pass
-
-        # 4. Wait for the Join button to appear using JS polling (most reliable approach)
-        # Then click it using Playwright's force click which generates a trusted pointer event.
-        logger.info("Waiting up to 90s for Google Meet pre-join screen to render...")
-        
-        # First fill the name if needed (guest mode shows name input before button)
-        try:
-            name_input = page.locator('input[placeholder*="name" i], input[aria-label*="name" i], input[type="text"]')
+            name_input = page.locator(
+                'input[placeholder*="name" i], input[aria-label*="name" i]'
+            )
             if await name_input.count() > 0 and await name_input.first.is_visible():
-                logger.info("Found guest name input field, filling bot name '%s'", bot_name)
+                logger.info("Filling guest name: %s", bot_name)
                 await name_input.first.fill(bot_name)
                 await name_input.first.press("Tab")
-                await page.wait_for_timeout(500)
+                await page.wait_for_timeout(1000)
         except Exception:
             pass
 
-        # Use JS to wait until the VISIBLE "Ask to join" button appears (innerText, not textContent)
+        # --- Step 3: Wait up to 90s for "Ask to join" / "Join now" to appear ---
+        logger.info("Waiting up to 90s for the Join button to appear...")
         try:
             await page.wait_for_function(
                 """() => {
-                    const all = document.querySelectorAll('button, [role="button"], a');
-                    return Array.from(all).some(el => {
+                    const els = document.querySelectorAll('button, [role="button"]');
+                    return Array.from(els).some(el => {
                         const t = (el.innerText || '').trim().toLowerCase();
                         return t === 'ask to join' || t === 'join now';
                     });
                 }""",
-                timeout=90_000
+                timeout=90_000,
             )
-            logger.info("Visible Join button detected via JS polling! Attempting click...")
+            logger.info("Join button is visible in DOM.")
         except Exception:
-            logger.warning("JS wait_for_function timed out — trying click anyway")
+            logger.warning("Timed out waiting for join button — attempting click anyway.")
 
-        # Now find the button's exact screen position using JS and click via real mouse movement
-        clicked = False
-        # Use innerText so we only match the VISIBLE rendered button (not hidden templates)
+        # --- Step 4: Click the Join button via JS bounding rect + real mouse ---
         result = await page.evaluate("""() => {
-            const all = document.querySelectorAll('button, [role="button"], a');
-            for (const el of all) {
+            const els = document.querySelectorAll('button, [role="button"]');
+            for (const el of els) {
                 const t = (el.innerText || '').trim().toLowerCase();
                 if (t === 'ask to join' || t === 'join now') {
-                    el.scrollIntoView();
-                    const rect = el.getBoundingClientRect();
-                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, w: rect.width, h: rect.height, text: t };
+                    el.scrollIntoView({ block: 'center' });
+                    const r = el.getBoundingClientRect();
+                    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, text: el.innerText.trim() };
                 }
             }
             return null;
         }""")
 
-        logger.info(f"JS bounding rect result: {result}")
+        logger.info("Join button bounding rect: %s", result)
 
-        if result and result.get('w', 0) > 0 and result.get('h', 0) > 0:
-            x, y = result['x'], result['y']
-            logger.info(f"Clicking '{result['text']}' at ({x:.0f}, {y:.0f}) via real mouse...")
+        clicked = False
+        if result and result.get("w", 0) > 0 and result.get("h", 0) > 0:
+            x, y = result["x"], result["y"]
+            logger.info("Clicking '%s' at (%.0f, %.0f) via real mouse...", result["text"], x, y)
             await page.mouse.move(x, y)
-            await page.wait_for_timeout(300)
+            await page.wait_for_timeout(200)
             await page.mouse.click(x, y)
             clicked = True
         elif result:
-            # Element found but has 0 size — try Playwright force click as last resort
-            logger.warning(f"Button '{result['text']}' has 0 bounding rect. Trying Playwright force click...")
+            # Button found but 0-size (likely off-viewport). Scroll and try Playwright force click.
+            logger.warning("Join button has 0 bounding rect — trying force click.")
             try:
-                await page.locator(f'[role="button"]:has-text("Ask to join")').first.click(force=True, timeout=5000)
+                await page.locator('[role="button"]:has-text("Ask to join")').first.click(force=True, timeout=10_000)
                 clicked = True
-            except Exception as ex:
-                logger.warning(f"Force click also failed: {ex}")
+            except Exception:
+                try:
+                    await page.locator('[role="button"]:has-text("Join now")').first.click(force=True, timeout=10_000)
+                    clicked = True
+                except Exception as ex:
+                    logger.error("Force click failed: %s", ex)
 
         if not clicked:
-            logger.error("FATAL: Could not find ANY Join button to click on the screen!")
-            raise Exception("No Join button visible on screen after 90s wait.")
+            logger.error("Could not click any Join button. Raising to trigger forensic dump.")
+            raise RuntimeError("No clickable Join button found on screen.")
 
-        # 5. Wait to enter meeting or waiting room
-        # We must wait for the "Leave" button to appear. If we are placed in a waiting room
-        # ("Asking to join..."), we may wait here for a LONG time until the host admits us.
-        # We set this timeout to 15 minutes to avoid dropping out if the host is delayed.
-        logger.info("Clicked Join! Waiting for host to admit bot (timeout 15m) or automatic entry...")
+        # --- Step 5: Wait to actually enter the call (or waiting room) ---
+        # This waits up to 15 minutes so the host has time to admit the bot.
+        logger.info("Join clicked. Waiting up to 15m for host admission or auto-entry...")
         leave_selector = '[aria-label*="Leave call" i], [aria-label*="Leave" i], button[jsname="CQeAdf"]'
         await page.locator(leave_selector).first.wait_for(timeout=900_000)
-        logger.info("Successfully joined Google Meet call!")
+        logger.info("Successfully joined Google Meet!")
         return True
+
     except Exception as e:
         logger.exception("Failed to join Google Meet at %s: %s", meeting_url, e)
         try:
-            curr_url = page.url
-            curr_title = await page.title()
-            logger.error(f"FAILURE CONTEXT -> URL: {curr_url}")
-            logger.error(f"FAILURE CONTEXT -> Title: {curr_title}")
-            
-            # Dump all button text on screen to see what we COULD have clicked
+            logger.error("PAGE URL: %s", page.url)
+            logger.error("PAGE TITLE: %s", await page.title())
             buttons = page.locator("button, a, [role='button']")
             count = await buttons.count()
             ui_texts = []
             for i in range(count):
-                text = await buttons.nth(i).inner_text()
+                txt = (await buttons.nth(i).inner_text() or "").strip()
                 aria = await buttons.nth(i).get_attribute("aria-label")
-                if text or aria:
-                    ui_texts.append(f"Text='{text.strip()}' Aria='{aria}'")
-            logger.error(f"FAILURE CONTEXT -> Visible Buttons/Links: {ui_texts}")
-            
-            html = await page.content()
-            with open("/tmp/meet_join_failed.html", "w", encoding="utf-8") as f:
-                f.write(html)
+                if txt or aria:
+                    ui_texts.append(f"Text='{txt}' Aria='{aria}'")
+            logger.error("BUTTONS ON SCREEN: %s", ui_texts)
         except Exception:
             pass
         return False
 
 
 async def _join_zoom(page: Page, meeting_url: str, bot_name: str) -> bool:
-    """Zoom web client join flow. NOTE: Zoom frequently requires the meeting
-    host to admit from a waiting room, and the web client's DOM/iframe
-    structure changes across releases — verify selectors against the
-    current Zoom web client before relying on this in production."""
     try:
-        await page.goto(meeting_url, wait_until="domcontentloaded", timeout=_JOIN_TIMEOUT_MS)
-
-        # Zoom often nests the join UI in an iframe.
+        await page.goto(meeting_url, wait_until="domcontentloaded", timeout=30_000)
         frame = page
         for f in page.frames:
             if "zoom" in f.url:
                 frame = f
                 break
-
         name_input = frame.locator('input#inputname, input[name="uname"]')
         if await name_input.count() > 0:
             await name_input.first.fill(bot_name)
-
         join_btn = frame.locator('button:has-text("Join"), #joinBtn')
-        await join_btn.first.click(timeout=_JOIN_TIMEOUT_MS)
-
-        await page.locator('button[aria-label*="leave" i], button:has-text("Leave")').first.wait_for(timeout=60_000)
+        await join_btn.first.click(timeout=20_000)
+        await page.locator('button[aria-label*="leave" i]').first.wait_for(timeout=60_000)
         return True
     except Exception:
         logger.exception("Failed to join Zoom meeting at %s", meeting_url)
@@ -409,32 +261,16 @@ async def _join_zoom(page: Page, meeting_url: str, bot_name: str) -> bool:
 
 
 async def _join_teams(page: Page, meeting_url: str, bot_name: str) -> bool:
-    """Microsoft Teams web join flow. NOTE: Teams frequently forces an app-
-    download interstitial ("Continue on this browser" / "Use the web app
-    instead") before showing the name field — verify this path against a
-    live Teams link, it is the flow most likely to have shifted."""
     try:
-        await page.goto(meeting_url, wait_until="domcontentloaded", timeout=_JOIN_TIMEOUT_MS)
-
-        continue_browser = page.locator('a:has-text("Continue on this browser"), button:has-text("Continue on this browser")')
-        if await continue_browser.count() > 0:
-            await continue_browser.first.click(timeout=5000)
-
+        await page.goto(meeting_url, wait_until="domcontentloaded", timeout=30_000)
+        cont = page.locator('a:has-text("Continue on this browser"), button:has-text("Continue on this browser")')
+        if await cont.count() > 0:
+            await cont.first.click(timeout=5000)
         name_input = page.locator('input[data-tid="prejoin-display-name-input"]')
         if await name_input.count() > 0:
             await name_input.first.fill(bot_name)
-
-        for tid in ["toggle-mute", "toggle-video"]:
-            btn = page.locator(f'[data-tid="{tid}"][aria-pressed="false"]')
-            if await btn.count() > 0:
-                try:
-                    await btn.first.click(timeout=3000)
-                except Exception:
-                    pass
-
         join_btn = page.locator('button[data-tid="prejoin-join-button"]')
-        await join_btn.first.click(timeout=_JOIN_TIMEOUT_MS)
-
+        await join_btn.first.click(timeout=20_000)
         await page.locator('[data-tid="hangup-leave-button"]').first.wait_for(timeout=60_000)
         return True
     except Exception:
@@ -449,7 +285,9 @@ _PLATFORM_HANDLERS = {
 }
 
 
-async def join_meeting(meeting_url: str, platform: str, bot_name: str) -> tuple[bool, Browser | None, Page | None]:
+async def join_meeting(
+    meeting_url: str, platform: str, bot_name: str
+) -> tuple[bool, Browser | None, Page | None]:
     handler = _PLATFORM_HANDLERS.get(platform)
     if handler is None:
         logger.error("Unsupported platform '%s' for url %s", platform, meeting_url)
@@ -472,18 +310,15 @@ async def leave_meeting(browser: Browser | None) -> None:
 
 
 async def is_meeting_active(page: Page | None, platform: str) -> bool:
-    """Checks if the bot is still inside the meeting (hasn't been kicked or meeting ended)."""
     if not page or page.is_closed():
         return False
-        
     try:
         if platform == "google_meet":
             return await page.locator('[aria-label*="Leave call" i]').count() > 0
         elif platform == "zoom":
-            return await page.locator('button[aria-label*="leave" i], button:has-text("Leave")').count() > 0
+            return await page.locator('button[aria-label*="leave" i]').count() > 0
         elif platform == "teams":
             return await page.locator('[data-tid="hangup-leave-button"]').count() > 0
     except Exception:
         pass
-        
     return False
