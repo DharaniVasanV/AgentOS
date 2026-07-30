@@ -14,7 +14,9 @@ async def run():
     print("return to this terminal and press ENTER to save the session.")
     print("----------------------------------------------------------------\n")
     
+    async with async_playwright() as p:
         # Attempt to use the user's real Chrome/Edge browser to completely bypass Google's bot detection
+        browser = None
         try:
             print("Attempting to launch native Google Chrome...")
             browser = await p.chromium.launch(headless=False, channel="chrome", args=["--disable-blink-features=AutomationControlled"])

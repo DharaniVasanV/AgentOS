@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+.venv/
+*.db
+calendar_agent.db
+.pytest_cache/
+.coverage
+htmlcov/
+*.log

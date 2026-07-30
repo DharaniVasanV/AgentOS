@@ -1,0 +1,24 @@
+[
+  {
+    "id": "task_101",
+    "meeting_id": "meet_001",
+    "title": "AgentOS Architecture Review Meeting",
+    "description": "Review final database schema and multi-agent microservice architecture.",
+    "assigned_to": "dharanivasan",
+    "due_date": "2026-08-01T15:00:00Z",
+    "priority": "HIGH",
+    "status": "OPEN",
+    "category": "MEETING"
+  },
+  {
+    "id": "task_102",
+    "meeting_id": "meet_002",
+    "title": "Notification System Integration Deliverable",
+    "description": "Ensure Notification Agent delivers instant alerts upon event creation.",
+    "assigned_to": "dharanivasan",
+    "due_date": "2026-08-03T18:00:00Z",
+    "priority": "URGENT",
+    "status": "IN_PROGRESS",
+    "category": "TASK_DEADLINE"
+  }
+]

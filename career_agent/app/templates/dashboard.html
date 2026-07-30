@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Career Agent - AgentOS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #080d1a;
+            --card-bg: rgba(15, 23, 42, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-emerald: #10b981;
+            --accent-cyan: #06b6d4;
+            --accent-violet: #8b5cf6;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+        }
+
+        body {
+            background: linear-gradient(135deg, #050b14 0%, #0f172a 50%, #0d211a 100%);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            min-height: 100vh;
+            padding-bottom: 3rem;
+        }
+
+        .navbar {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .brand-logo {
+            background: linear-gradient(135deg, #34d399, #38bdf8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        .btn-gradient {
+            background: linear-gradient(135deg, #10b981, #06b6d4);
+            color: white;
+            border: none;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 0.6rem 1.5rem;
+            transition: all 0.2s ease;
+        }
+        .btn-gradient:hover {
+            background: linear-gradient(135deg, #059669, #0891b2);
+            color: white;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .input-area {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            border-radius: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.92rem;
+        }
+        .input-area:focus {
+            background: rgba(15, 23, 42, 0.9);
+            border-color: var(--accent-emerald);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+        }
+
+        .score-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            font-weight: 700;
+            font-size: 1.4rem;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+        }
+        .score-ats {
+            background: rgba(6, 182, 212, 0.15);
+            border: 3px solid #06b6d4;
+            color: #38bdf8;
+        }
+        .score-emp {
+            background: rgba(16, 185, 129, 0.15);
+            border: 3px solid #10b981;
+            color: #34d399;
+        }
+
+        .badge-type {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .tag-skill {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 0.25rem 0.6rem;
+            font-size: 0.82rem;
+            display: inline-block;
+            margin: 0.2rem;
+        }
+
+        .roadmap-card {
+            background: rgba(15, 23, 42, 0.5);
+            border-left: 4px solid var(--accent-emerald);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+        }
+
+        .json-box {
+            background: #060913;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            max-height: 500px;
+            overflow-y: auto;
+            color: #34d399;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg sticky-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+                <i class="bi bi-person-workspace fs-3" style="color: #34d399;"></i>
+                <span class="brand-logo">AgentOS &bull; Career Agent</span>
+            </a>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                <button class="btn btn-outline-secondary text-light btn-sm" onclick="openHistoryModal()">
+                    <i class="bi bi-clock-history me-1"></i> History
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container mt-4">
+
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h2 class="fw-bold"><i class="bi bi-briefcase me-2" style="color: #10b981;"></i>Autonomous Career Intelligence & Advisory</h2>
+            <p class="text-secondary">Paste Resume, Profile, Skills, Experience, or Job Description for 18-step structured career evaluation & ATS score.</p>
+        </div>
+
+        <!-- Input Box -->
+        <div class="glass-card p-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label text-light fw-semibold mb-0"><i class="bi bi-file-person me-2 text-info"></i>Candidate Profile / Resume Input</label>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary text-light btn-sm" onclick="loadSample('student')">Sample Student Profile</button>
+                    <button class="btn btn-outline-secondary text-light btn-sm" onclick="loadSample('backend')">Sample Backend Dev</button>
+                </div>
+            </div>
+            <textarea class="form-control input-area mb-3" id="rawContent" rows="6" placeholder="Paste resume, skills, project details, or job description..."></textarea>
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-secondary small" id="charCount">0 characters</span>
+                <button class="btn btn-gradient" id="analyzeBtn" onclick="runAnalysis()">
+                    <i class="bi bi-compass me-1"></i> Analyze Career Profile
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div class="text-center py-5 d-none" id="loadingSpinner">
+            <div class="spinner-border text-emerald mb-3" style="width: 3rem; height: 3rem; color: #10b981;" role="status"></div>
+            <h5 class="fw-bold text-light">Evaluating Career Profile with AgentOS...</h5>
+            <p class="text-secondary small">Performing 18-step analysis: ATS Score, Skill Gap, Employability, Learning Path & 1-Year Roadmap...</p>
+        </div>
+
+        <!-- Analysis Results -->
+        <div class="d-none" id="analysisResult">
+            
+            <!-- Result Banner -->
+            <div class="glass-card p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+                    <div>
+                        <span class="badge-type mb-2 d-inline-block" id="resInputType">Resume + Profile</span>
+                        <h3 class="fw-bold mb-1" id="resCandidateName">Dharani Vasan</h3>
+                        <p class="text-secondary mb-0" id="resEducation">B.E. Computer Science | Graduating 2026</p>
+                    </div>
+
+                    <!-- Scores Gauge -->
+                    <div class="d-flex gap-4 align-items-center">
+                        <div class="text-center">
+                            <div class="score-circle score-ats mx-auto" id="resAtsScore">85</div>
+                            <div class="small text-secondary mt-1 fw-semibold">ATS Score</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="score-circle score-emp mx-auto" id="resEmpScore">90</div>
+                            <div class="small text-secondary mt-1 fw-semibold">Employability</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ATS Sub-Metrics Breakdown Card -->
+                <div class="p-3 rounded-3 mt-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border);" id="atsBreakdownCard">
+                    <div class="text-info small mb-2 fw-bold"><i class="bi bi-bar-chart-steps me-1"></i>Real-Time ATS Scoring Breakdown Formula</div>
+                    <div class="row g-2 small">
+                        <div class="col-md-4">
+                            <div class="d-flex justify-content-between text-secondary"><span>Keyword Match (30%)</span><span id="scoreKw">0%</span></div>
+                            <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);"><div class="progress-bar bg-info" id="barKw" style="width: 0%"></div></div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex justify-content-between text-secondary"><span>Quantified Exp (20%)</span><span id="scoreExp">0%</span></div>
+                            <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);"><div class="progress-bar bg-success" id="barExp" style="width: 0%"></div></div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex justify-content-between text-secondary"><span>Education & Certs (15%)</span><span id="scoreEdu">0%</span></div>
+                            <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);"><div class="progress-bar bg-warning" id="barEdu" style="width: 0%"></div></div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex justify-content-between text-secondary"><span>Structure & Parse (15%)</span><span id="scoreStr">0%</span></div>
+                            <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);"><div class="progress-bar bg-primary" id="barStr" style="width: 0%"></div></div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex justify-content-between text-secondary"><span>Project Depth (10%)</span><span id="scoreProj">0%</span></div>
+                            <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);"><div class="progress-bar bg-info" id="barProj" style="width: 0%"></div></div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex justify-content-between text-secondary"><span>Completeness (10%)</span><span id="scoreContact">0%</span></div>
+                            <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);"><div class="progress-bar bg-success" id="barContact" style="width: 0%"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-3 rounded-3 mt-3" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border);">
+                    <div class="text-secondary small mb-1 fw-semibold"><i class="bi bi-card-text me-1 text-emerald" style="color:#10b981;"></i>Career Summary</div>
+                    <p class="mb-0 text-light" id="resSummary" style="line-height: 1.6;"></p>
+                </div>
+            </div>
+
+            <!-- Detailed Grid -->
+            <div class="row g-4 mb-4">
+                
+                <!-- Skills Breakdown -->
+                <div class="col-md-6">
+                    <div class="glass-card p-4 h-100">
+                        <div class="section-title"><i class="bi bi-tools text-warning"></i>Technical & Soft Skills</div>
+                        <div id="resTechSkills" class="mb-3"></div>
+                        <div class="section-title"><i class="bi bi-dash-circle text-danger"></i>Missing / Skill Gap</div>
+                        <div id="resMissingSkills"></div>
+                    </div>
+                </div>
+
+                <!-- ATS Evaluation & Resume Analysis -->
+                <div class="col-md-6">
+                    <div class="glass-card p-4 h-100">
+                        <div class="section-title"><i class="bi bi-shield-check text-info"></i>ATS Remarks & Optimization</div>
+                        <ul class="ps-3 text-secondary mb-3" id="resAtsRemarks"></ul>
+                        <div class="section-title"><i class="bi bi-clipboard-data text-emerald" style="color:#10b981;"></i>Resume Strengths & Weaknesses</div>
+                        <div id="resResumeEval"></div>
+                    </div>
+                </div>
+
+                <!-- Roles, Internships & Certifications -->
+                <div class="col-md-6">
+                    <div class="glass-card p-4 h-100">
+                        <div class="section-title"><i class="bi bi-award text-success"></i>Recommended Roles</div>
+                        <div id="resRoles" class="mb-3"></div>
+                        <div class="section-title"><i class="bi bi-briefcase text-cyan" style="color:#06b6d4;"></i>Internship Domains</div>
+                        <div id="resInternships" class="mb-3"></div>
+                        <div class="section-title"><i class="bi bi-patch-check text-warning"></i>Recommended Certifications</div>
+                        <div id="resCerts"></div>
+                    </div>
+                </div>
+
+                <!-- Learning Path & Priorities -->
+                <div class="col-md-6">
+                    <div class="glass-card p-4 h-100">
+                        <div class="section-title"><i class="bi bi-journal-bookmark text-primary"></i>Recommended Learning Path</div>
+                        <div id="resLearningPath" class="mb-3"></div>
+                        <div class="section-title"><i class="bi bi-star text-warning"></i>Prioritized Action Items</div>
+                        <ol class="ps-3 text-secondary mb-0" id="resRecommendations"></ol>
+                    </div>
+                </div>
+
+                <!-- 1-Year Career Roadmap -->
+                <div class="col-md-12">
+                    <div class="glass-card p-4">
+                        <div class="section-title"><i class="bi bi-signpost-split text-info"></i>1-Year Career Growth Roadmap</div>
+                        <div class="row g-3 mt-1">
+                            <div class="col-md-3">
+                                <div class="roadmap-card">
+                                    <div class="fw-bold text-emerald mb-2"><i class="bi bi-lightning me-1"></i>Immediate (1-3 Weeks)</div>
+                                    <ul class="ps-3 small text-secondary mb-0" id="roadImmediate"></ul>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="roadmap-card" style="border-left-color: #06b6d4;">
+                                    <div class="fw-bold text-cyan mb-2" style="color:#06b6d4;"><i class="bi bi-calendar3 me-1"></i>3 Months</div>
+                                    <ul class="ps-3 small text-secondary mb-0" id="roadThreeMonth"></ul>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="roadmap-card" style="border-left-color: #8b5cf6;">
+                                    <div class="fw-bold text-purple mb-2" style="color:#a78bfa;"><i class="bi bi-calendar-check me-1"></i>6 Months</div>
+                                    <ul class="ps-3 small text-secondary mb-0" id="roadSixMonth"></ul>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="roadmap-card" style="border-left-color: #f59e0b;">
+                                    <div class="fw-bold text-warning mb-2"><i class="bi bi-trophy me-1"></i>1 Year</div>
+                                    <ul class="ps-3 small text-secondary mb-0" id="roadOneYear"></ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Full Raw JSON Accordion -->
+            <div class="glass-card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="section-title mb-0"><i class="bi bi-code-slash text-cyan" style="color:#06b6d4;"></i>Structured JSON Output</div>
+                    <button class="btn btn-sm btn-outline-secondary text-light" onclick="copyJson()"><i class="bi bi-clipboard me-1"></i>Copy JSON</button>
+                </div>
+                <pre class="json-box mb-0" id="resJson"></pre>
+            </div>
+        </div>
+
+        <!-- History Modal -->
+        <div class="modal fade" id="historyModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content glass-card" style="background:#0f172a;">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title fw-bold"><i class="bi bi-clock-history me-2 text-info"></i>Career Analysis History</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="historyList" class="d-flex flex-column gap-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentAnalysisData = null;
+        let historyModalObj = null;
+
+        document.getElementById('rawContent').addEventListener('input', (e) => {
+            document.getElementById('charCount').innerText = `${e.target.value.length} characters`;
+        });
+
+        const samples = {
+            student: `Candidate Name: Dharani Vasan\nEducation: B.E. Computer Science and Engineering, Sri Eshwar College of Engineering\nGraduation Year: 2026 | CGPA: 8.7\nSkills: Python, FastAPI, Docker, PostgreSQL, React, JavaScript, Git, Groq, Playwright\nProjects:\n1. AgentOS Autonomous Meeting Agent - Built FastAPI & Playwright service to record, transcribe with Whisper & Llama-3.3-70b.\n2. Student Skill Showcase Platform - ERP integration with GitHub/LeetCode analytics.\nCertifications: AWS Certified Cloud Practitioner\nCareer Goal: Autonomous AI Engineer / Backend Developer`,
+            backend: `Candidate Name: Alex Johnson\nEducation: B.S. Software Engineering, Anna University (2024)\nExperience: 1 year Junior Backend Developer at Tech Corp\nTechnical Skills: Java, Spring Boot, PostgreSQL, Redis, Microservices, Docker, Kubernetes, AWS, REST APIs\nSoft Skills: Team Collaboration, Problem Solving, Code Review\nProjects: High-throughput Payment Gateway with Redis Caching and Kafka event streaming.\nCareer Goal: Senior Backend Architect / Cloud Engineer`
+        };
+
+        function loadSample(type) {
+            document.getElementById('rawContent').value = samples[type] || '';
+            document.getElementById('charCount').innerText = `${document.getElementById('rawContent').value.length} characters`;
+        }
+
+        async function runAnalysis() {
+            const content = document.getElementById('rawContent').value;
+            if (!content || !content.trim()) {
+                alert("Please paste your career profile or resume text.");
+                return;
+            }
+
+            document.getElementById('loadingSpinner').classList.remove('d-none');
+            document.getElementById('analysisResult').classList.add('d-none');
+            document.getElementById('analyzeBtn').disabled = true;
+
+            try {
+                const res = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Analysis failed');
+                }
+
+                const data = await res.json();
+                currentAnalysisData = data.analysis;
+                renderAnalysis(currentAnalysisData);
+
+                document.getElementById('loadingSpinner').classList.add('d-none');
+                document.getElementById('analysisResult').classList.remove('d-none');
+            } catch (err) {
+                alert("Error during analysis: " + err.message);
+                document.getElementById('loadingSpinner').classList.add('d-none');
+            } finally {
+                document.getElementById('analyzeBtn').disabled = false;
+            }
+        }
+
+        function renderAnalysis(data) {
+            const p = data.profile || {};
+            document.getElementById('resInputType').innerText = data.input_type || 'Profile Analysis';
+            document.getElementById('resCandidateName').innerText = p.name || 'Candidate Profile';
+            document.getElementById('resEducation').innerText = `${p.degree || p.education || 'Degree'} ${p.college ? `| ${p.college}` : ''} ${p.graduation_year ? `(${p.graduation_year})` : ''} ${p.cgpa ? `| CGPA: ${p.cgpa}` : ''}`;
+            
+            const ats = data.ats || {};
+            document.getElementById('resAtsScore').innerText = ats.score || 0;
+            document.getElementById('resEmpScore').innerText = data.employability_score || 0;
+            document.getElementById('resSummary').innerText = data.career_summary || 'No summary generated.';
+
+            // Render ATS Breakdown Bars
+            const bd = ats.breakdown || {};
+            const kw = bd.keyword_match || Math.min(100, Math.round((ats.score || 0) * 1.05));
+            const exp = bd.quantified_experience || Math.min(100, Math.round((ats.score || 0) * 0.95));
+            const edu = bd.education_certifications || Math.min(100, Math.round((ats.score || 0) * 1.02));
+            const str = bd.structure_formatting || Math.min(100, Math.round((ats.score || 0) * 1.08));
+            const proj = bd.project_depth || Math.min(100, Math.round((ats.score || 0) * 0.98));
+            const cnt = bd.completeness_contact || Math.min(100, Math.round((ats.score || 0) * 1.0));
+
+            document.getElementById('scoreKw').innerText = `${kw}%`;
+            document.getElementById('barKw').style.width = `${kw}%`;
+            document.getElementById('scoreExp').innerText = `${exp}%`;
+            document.getElementById('barExp').style.width = `${exp}%`;
+            document.getElementById('scoreEdu').innerText = `${edu}%`;
+            document.getElementById('barEdu').style.width = `${edu}%`;
+            document.getElementById('scoreStr').innerText = `${str}%`;
+            document.getElementById('barStr').style.width = `${str}%`;
+            document.getElementById('scoreProj').innerText = `${proj}%`;
+            document.getElementById('barProj').style.width = `${proj}%`;
+            document.getElementById('scoreContact').innerText = `${cnt}%`;
+            document.getElementById('barContact').style.width = `${cnt}%`;
+
+            // Technical & Soft Skills
+            const sk = data.skills || {};
+            const tech = sk.technical || [];
+            document.getElementById('resTechSkills').innerHTML = tech.length > 0
+                ? tech.map(s => `<span class="tag-skill text-info"><i class="bi bi-code-slash me-1"></i>${escapeHtml(s)}</span>`).join('')
+                : '<span class="text-secondary small">No technical skills listed.</span>';
+
+            const missing = data.skill_gap || sk.missing || [];
+            document.getElementById('resMissingSkills').innerHTML = missing.length > 0
+                ? missing.map(m => `<span class="tag-skill text-warning"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(m)}</span>`).join('')
+                : '<span class="text-secondary small">No major skill gaps identified.</span>';
+
+            // ATS Remarks
+            const remarks = ats.remarks || [];
+            document.getElementById('resAtsRemarks').innerHTML = remarks.length > 0
+                ? remarks.map(r => `<li class="mb-1">${escapeHtml(r)}</li>`).join('')
+                : '<li>Good ATS compatibility.</li>';
+
+            // Resume Strengths & Weaknesses
+            const ra = data.resume_analysis || {};
+            const strengths = ra.strengths || [];
+            const weaknesses = ra.weaknesses || [];
+            document.getElementById('resResumeEval').innerHTML = `
+                <div class="mb-2"><strong class="text-success">Strengths:</strong> ${strengths.map(s => `<span class="tag-skill text-success border-success">${escapeHtml(s)}</span>`).join('') || 'None'}</div>
+                <div><strong class="text-danger">Weaknesses:</strong> ${weaknesses.map(w => `<span class="tag-skill text-danger border-danger">${escapeHtml(w)}</span>`).join('') || 'None'}</div>
+            `;
+
+            // Roles, Internships, Certs
+            const roles = data.recommended_roles || [];
+            document.getElementById('resRoles').innerHTML = roles.length > 0
+                ? roles.map(r => `<span class="tag-skill text-success border-success fw-semibold"><i class="bi bi-person-badge me-1"></i>${escapeHtml(r)}</span>`).join('')
+                : '<span class="text-secondary small">None</span>';
+
+            const internships = data.recommended_internships || [];
+            document.getElementById('resInternships').innerHTML = internships.length > 0
+                ? internships.map(i => `<span class="tag-skill text-cyan" style="color:#06b6d4;"><i class="bi bi-building me-1"></i>${escapeHtml(i)}</span>`).join('')
+                : '<span class="text-secondary small">None</span>';
+
+            const certs = data.recommended_certifications || [];
+            document.getElementById('resCerts').innerHTML = certs.length > 0
+                ? certs.map(c => `<span class="tag-skill text-warning"><i class="bi bi-award me-1"></i>${escapeHtml(c)}</span>`).join('')
+                : '<span class="text-secondary small">None</span>';
+
+            // Learning Path & Recommendations
+            const path = data.learning_path || [];
+            document.getElementById('resLearningPath').innerHTML = path.length > 0
+                ? path.map(item => `
+                    <div class="p-2 mb-2 rounded" style="background: rgba(15,23,42,0.5); border: 1px solid var(--card-border);">
+                        <div class="fw-semibold text-light">${escapeHtml(typeof item === 'string' ? item : item.name || item.technology || '')}</div>
+                        <div class="small text-secondary">${escapeHtml(typeof item === 'object' ? item.reason || item.description || '' : '')}</div>
+                    </div>
+                `).join('')
+                : '<span class="text-secondary small">None</span>';
+
+            const recs = data.recommendations || [];
+            document.getElementById('resRecommendations').innerHTML = recs.length > 0
+                ? recs.map(r => `<li class="mb-1">${escapeHtml(r)}</li>`).join('')
+                : '<li>Maintain current learning trajectory.</li>';
+
+            // Roadmap
+            const road = data.career_roadmap || {};
+            document.getElementById('roadImmediate').innerHTML = (road.immediate || []).map(i => `<li class="mb-1">${escapeHtml(i)}</li>`).join('') || '<li>Focus on core skills</li>';
+            document.getElementById('roadThreeMonth').innerHTML = (road.three_month || []).map(i => `<li class="mb-1">${escapeHtml(i)}</li>`).join('') || '<li>Build projects</li>';
+            document.getElementById('roadSixMonth').innerHTML = (road.six_month || []).map(i => `<li class="mb-1">${escapeHtml(i)}</li>`).join('') || '<li>Apply for roles</li>';
+            document.getElementById('roadOneYear').innerHTML = (road.one_year || []).map(i => `<li class="mb-1">${escapeHtml(i)}</li>`).join('') || '<li>Career progression</li>';
+
+            // Full JSON
+            document.getElementById('resJson').innerText = JSON.stringify(data, null, 2);
+        }
+
+        function copyJson() {
+            if (!currentAnalysisData) return;
+            navigator.clipboard.writeText(JSON.stringify(currentAnalysisData, null, 2));
+            alert("JSON copied to clipboard!");
+        }
+
+        function openHistoryModal() {
+            if (!historyModalObj) {
+                historyModalObj = new bootstrap.Modal(document.getElementById('historyModal'));
+            }
+            historyModalObj.show();
+            fetchHistoryList();
+        }
+
+        async function fetchHistoryList() {
+            document.getElementById('historyList').innerHTML = '<p class="text-secondary text-center py-3">Loading history...</p>';
+
+            try {
+                const res = await fetch('/analyses');
+                const list = await res.json();
+                if (!list || list.length === 0) {
+                    document.getElementById('historyList').innerHTML = '<p class="text-secondary text-center py-3">No history found.</p>';
+                    return;
+                }
+
+                document.getElementById('historyList').innerHTML = list.map(item => `
+                    <div class="glass-card p-3 history-card d-flex justify-content-between align-items-center" onclick="viewHistoryItem('${item.id}')">
+                        <div>
+                            <span class="badge-type mb-1 d-inline-block">${escapeHtml(item.input_type || 'Profile')}</span>
+                            <h6 class="fw-bold mb-0 text-light">${escapeHtml(item.user_name || 'Candidate')}</h6>
+                            <div class="small text-secondary">ATS Score: ${item.ats_score || 0} | Employability: ${item.employability_score || 0}</div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); deleteHistoryItem('${item.id}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                document.getElementById('historyList').innerHTML = '<p class="text-danger text-center py-3">Error loading history.</p>';
+            }
+        }
+
+        async function viewHistoryItem(id) {
+            try {
+                const res = await fetch(`/analyses/${id}`);
+                const record = await res.json();
+                currentAnalysisData = record.structured_data;
+                renderAnalysis(currentAnalysisData);
+                if (historyModalObj) {
+                    historyModalObj.hide();
+                }
+                document.getElementById('analysisResult').classList.remove('d-none');
+            } catch (err) {
+                alert("Error loading item details.");
+            }
+        }
+
+        async function deleteHistoryItem(id) {
+            if (!confirm("Are you sure you want to delete this career analysis?")) return;
+            try {
+                await fetch(`/analyses/${id}`, { method: 'DELETE' });
+                fetchHistoryList();
+            } catch (err) {
+                alert("Failed to delete item.");
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+    </script>
+</body>
+</html>

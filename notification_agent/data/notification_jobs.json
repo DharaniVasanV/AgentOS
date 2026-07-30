@@ -1,0 +1,28 @@
+[
+  {
+    "id": "3e53b8ee-62e9-4005-a098-c70570440792",
+    "calendar_event_id": null,
+    "user_id": "dharanivasan",
+    "title": "Standalone Notification Job Test",
+    "description": "Created via Notification Agent UI / API in Standalone Mode.",
+    "category": "Calendar Agent Integration",
+    "priority": "Emergency",
+    "notification_time": "2026-07-30T11:15:00",
+    "channels": [
+      "Browser",
+      "Dashboard",
+      "Desktop",
+      "Email"
+    ],
+    "sound": null,
+    "action_buttons": [
+      "Open Calendar",
+      "Dismiss"
+    ],
+    "action_url": null,
+    "user_email": "dharanivasan.v2024csbs@sece.ac.in",
+    "status": "Delivered",
+    "created_at": "2026-07-30T11:16:17.945345",
+    "updated_at": "2026-07-30T11:16:18.015723"
+  }
+]

@@ -4,18 +4,17 @@ app/services/meeting_joiner.py
 Purpose
 -------
 The orchestrator for a single meeting, start to finish. This is the
-"main workflow" module — everything else (browser, recorder, whisper,
-summary, extraction, attendance) is a step this file calls in order.
+"main workflow" module — everything else (browser, recorder, whisper_service,
+attendance) is a step this file calls in order.
 
 Responsibilities
 ----------------
 - Detect platform, flip status scheduled -> joining -> in_progress
-- Join via browser.py, start recording via recorder.py
-- Wait until the meeting's scheduled end (or the safety-cap duration,
-  whichever comes first), then leave + stop recording
-- Run the transcription -> summary/extraction -> attendance pipeline
-- Flip status -> completed (or failed, with audit log + notification,
-  on any unrecoverable error)
+- Join via browser.py & record audio via recorder.py (WASAPI loopback)
+- Wait until the meeting's scheduled end (or early exit), then leave
+- Transcribe audio via whisper_service.py and store raw transcript in DB
+- Record attendance metadata
+- Flip status -> completed (or failed)
 
 Flow
 ----
@@ -23,26 +22,26 @@ meeting_monitor.py -> handle_meeting(meeting)
     -> browser.join_meeting()
     -> recorder.start_recording()
     -> [wait for meeting end]
-    -> recorder.stop_recording() + browser.leave_meeting()
+    -> recorder.stop_recording()
+    -> browser.leave_meeting()
     -> whisper_service.transcribe_and_store()
-    -> report_service.build_and_save_report()
     -> attendance_service.record_attendance()
     -> crud.set_meeting_status("completed")
 
 Dependencies
 ------------
-app.services.{browser,recorder,whisper_service,report_service,attendance_service}
+app.services.{browser,recorder,whisper_service,attendance_service}
 app.db.{crud,database}
 """
 
 import asyncio
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 from app.config.settings import get_settings
 from app.db import crud
 from app.db.database import get_session
 from app.db.models import Meeting
-from app.services import browser, recorder, whisper_service, report_service, attendance_service
+from app.services import browser, whisper_service, recorder
 from app.utils.helpers import detect_platform
 from app.utils.logger import get_logger
 
@@ -51,8 +50,9 @@ settings = get_settings()
 
 
 def _seconds_until_meeting_end(meeting: Meeting) -> int:
-    """How long to keep recording, capped by MEETING_MAX_DURATION_MINUTES
-    in case end_time is missing/wrong and we'd otherwise record forever."""
+    """How long to keep the bot in the meeting, capped by
+    MEETING_MAX_DURATION_MINUTES in case end_time is missing/wrong and
+    we'd otherwise stay in the call forever."""
     cap_seconds = settings.MEETING_MAX_DURATION_MINUTES * 60
     if not meeting.end_time:
         return cap_seconds
@@ -76,7 +76,6 @@ async def handle_meeting(meeting_id) -> None:
 
         platform = detect_platform(meeting.meeting_url, meeting.platform)
         await crud.set_meeting_status(session, meeting.id, "joining")
-        await crud.add_audit_log(session, meeting.id, "join_attempt", f"platform={platform}")
 
     try:
         success, browser_handle, page = await browser.join_meeting(
@@ -89,75 +88,60 @@ async def handle_meeting(meeting_id) -> None:
     if not success:
         async with get_session() as session:
             await crud.set_meeting_status(session, meeting.id, "failed")
-            await crud.add_audit_log(session, meeting.id, "join_failed", f"platform={platform}")
-            await crud.add_notification(
-                session, meeting.id,
-                f"Meeting Agent could not join '{meeting.title or meeting.id}' ({platform}).",
-                type_="error",
-            )
         return
 
-    join_time = datetime.utcnow()
+    join_time = datetime.now()
     async with get_session() as session:
         await crud.set_meeting_status(session, meeting.id, "in_progress")
-        await crud.add_audit_log(session, meeting.id, "joined", f"platform={platform}")
-
-    # Force-reroute ALL Chromium audio sink-inputs to meetingsink so ffmpeg can capture them.
-    # This is belt-and-suspenders: even if Chromium defaulted to a different sink at launch,
-    # this moves every active audio stream into our virtual capture sink.
-    try:
-        reroute = await asyncio.create_subprocess_exec(
-            "bash", "-c",
-            "pactl list short sink-inputs | awk '{print $1}' | xargs -I{} pactl move-sink-input {} meetingsink",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await reroute.wait()
-        logger.info("Rerouted all PulseAudio sink-inputs to meetingsink")
-    except Exception:
-        logger.warning("Could not reroute PulseAudio sink-inputs (non-fatal)")
-
-    audio_path, ffmpeg_process = await recorder.start_recording(meeting.id)
 
     wait_seconds = _seconds_until_meeting_end(meeting)
-    logger.info("Meeting %s: recording for up to %s seconds, polling for early end...", meeting.id, wait_seconds)
+    logger.info("In-browser digital audio capture engine initialized successfully.")
+    logger.info("Meeting %s: active and recording audio for up to %s seconds...", meeting.id, wait_seconds)
+
+    # Start audio recorder subprocess (FFmpeg WASAPI)
+    audio_path, proc = await recorder.start_recording(meeting.id, page=page)
+
+    # Brief post-join stabilization delay
+    await asyncio.sleep(5)
 
     # Poll every 5 seconds to see if we're still in the meeting
-    elapsed = 0
+    elapsed = 5
     poll_interval = 5
     while elapsed < wait_seconds:
-        # Check if we were kicked or if host ended meeting for everyone
+        # Guarantee microphone and camera stay strictly muted
+        await browser.ensure_muted(page)
+
+        # Check if host ended meeting or everyone left
         if not await browser.is_meeting_active(page, platform):
-            logger.info("Meeting %s ended early or bot was removed. Stopping recording.", meeting.id)
+            logger.info("Meeting %s ended early or bot was removed.", meeting.id)
             break
-            
+
         await asyncio.sleep(poll_interval)
         elapsed += poll_interval
 
-    await recorder.stop_recording(ffmpeg_process)
+    # Stop audio recorder
+    await recorder.stop_recording(proc, page=page)
+
     await browser.leave_meeting(browser_handle)
-    leave_time = datetime.utcnow()
+    leave_time = datetime.now()
 
     try:
         async with get_session() as session:
-            transcript_row = await whisper_service.transcribe_and_store(session, meeting.id, audio_path)
-            await report_service.build_and_save_report(session, meeting.id, transcript_row.transcript)
-            await attendance_service.record_attendance(session, meeting.id, join_time, leave_time)
-
-            await crud.set_meeting_status(session, meeting.id, "completed")
-            await crud.add_audit_log(session, meeting.id, "completed", "transcript+report+attendance saved")
-            await crud.add_notification(
-                session, meeting.id,
-                f"Meeting notes ready for '{meeting.title or meeting.id}'.",
-                type_="success",
+            transcript_text = await whisper_service.transcribe_and_store(
+                session, meeting.id, audio_path=audio_path
             )
+            await crud.save_meeting_output(
+                session,
+                meeting_id=meeting.id,
+                audio_path=audio_path,
+                transcript=transcript_text,
+                join_time=join_time,
+                leave_time=leave_time,
+                bot_joined=True,
+            )
+            await crud.set_meeting_status(session, meeting.id, "completed")
+            logger.info("Meeting %s completed. Output saved in meetings table (transcript: %d chars)", meeting.id, len(transcript_text))
     except Exception:
         logger.exception("Post-processing failed for meeting %s", meeting.id)
         async with get_session() as session:
             await crud.set_meeting_status(session, meeting.id, "failed")
-            await crud.add_audit_log(session, meeting.id, "post_processing_failed", "")
-            await crud.add_notification(
-                session, meeting.id,
-                f"Meeting Agent joined '{meeting.title or meeting.id}' but failed to generate notes.",
-                type_="error",
-            )

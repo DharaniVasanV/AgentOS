@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Retrieval Service - AgentOS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #050b14;
+            --card-bg: rgba(15, 23, 42, 0.8);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-cyan: #06b6d4;
+            --accent-violet: #8b5cf6;
+            --accent-emerald: #10b981;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+        }
+
+        body {
+            background: linear-gradient(135deg, #030712 0%, #0f172a 50%, #0d211a 100%);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            min-height: 100vh;
+            padding-bottom: 3rem;
+        }
+
+        .navbar {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .brand-logo {
+            background: linear-gradient(135deg, #34d399, #38bdf8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        .btn-gradient {
+            background: linear-gradient(135deg, #10b981, #06b6d4);
+            color: white;
+            border: none;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 0.6rem 1.5rem;
+            transition: all 0.2s ease;
+        }
+        .btn-gradient:hover {
+            background: linear-gradient(135deg, #059669, #0891b2);
+            color: white;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .input-query {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            border-radius: 12px;
+            font-size: 1rem;
+        }
+        .input-query:focus {
+            background: rgba(15, 23, 42, 0.9);
+            border-color: var(--accent-emerald);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+        }
+
+        .answer-box {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            border-radius: 12px;
+            padding: 1.25rem;
+            line-height: 1.7;
+            font-size: 1.05rem;
+            color: #f1f5f9;
+        }
+
+        .doc-chip {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .json-box {
+            background: #030712;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            max-height: 450px;
+            overflow-y: auto;
+            color: #34d399;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg sticky-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+                <i class="bi bi-search-heart fs-3" style="color: #34d399;"></i>
+                <span class="brand-logo">AgentOS &bull; Knowledge Retrieval Service</span>
+            </a>
+            <div class="ms-auto d-flex align-items-center gap-2">
+                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2 rounded-pill small">
+                    <i class="bi bi-cpu me-1"></i> Groq API Key 5
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container mt-4">
+
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h2 class="fw-bold"><i class="bi bi-cpu me-2" style="color: #10b981;"></i>Context-Aware Grounded RAG Retrieval</h2>
+            <p class="text-secondary">Ask questions about your meetings, research reports, career, certificates, tasks, or documents.</p>
+        </div>
+
+        <!-- Query Box -->
+        <div class="glass-card p-4 mb-4">
+            <label class="form-label text-light fw-semibold mb-2"><i class="bi bi-question-circle me-2 text-info"></i>Knowledge Base Query</label>
+            <div class="input-group mb-3">
+                <input type="text" class="form-control input-query py-2" id="userQuery" placeholder="Ask a question (e.g. What meetings discussed Docker?)" onkeydown="if(event.key==='Enter') runRetrieval()">
+                <button class="btn btn-gradient px-4" id="searchBtn" onclick="runRetrieval()">
+                    <i class="bi bi-search me-1"></i> Search Knowledge
+                </button>
+            </div>
+            
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="text-secondary small fw-semibold">Try sample questions:</span>
+                <button class="btn btn-outline-secondary text-light btn-sm rounded-pill" onclick="loadQuery('What meetings discussed Docker?')">Docker Meetings</button>
+                <button class="btn btn-outline-secondary text-light btn-sm rounded-pill" onclick="loadQuery('What certificates do I have?')">Certificates</button>
+                <button class="btn btn-outline-secondary text-light btn-sm rounded-pill" onclick="loadQuery('Show all discussions about React.')">React Discussions</button>
+                <button class="btn btn-outline-secondary text-light btn-sm rounded-pill" onclick="loadQuery('What tasks were assigned?')">Assigned Tasks</button>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div class="text-center py-5 d-none" id="loadingSpinner">
+            <div class="spinner-border text-success mb-3" style="width: 3rem; height: 3rem; color: #10b981;" role="status"></div>
+            <h5 class="fw-bold text-light">Executing 12-Step RAG Retrieval Pipeline...</h5>
+            <p class="text-secondary small">Query embedding (384d) &bull; ChromaDB Cosine Search &bull; Top-5 Chunk Filtering &bull; Grounded Generation via Groq API Key 5...</p>
+        </div>
+
+        <!-- Retrieval Result -->
+        <div class="d-none" id="retrievalResult">
+            
+            <!-- Grounded Answer Card -->
+            <div class="glass-card p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2 rounded-pill fw-semibold" id="resConfidence">
+                            Confidence: High
+                        </span>
+                        <span class="text-secondary small" id="resTimeMs">Processed in 0 ms</span>
+                    </div>
+                </div>
+
+                <div class="section-title"><i class="bi bi-chat-left-quote text-emerald" style="color:#10b981;"></i>Grounded Answer</div>
+                <div class="answer-box mb-3" id="resAnswer"></div>
+            </div>
+
+            <!-- Retrieved Documents & Citations Grid -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-6">
+                    <div class="glass-card p-4 h-100">
+                        <div class="section-title"><i class="bi bi-file-earmark-text text-info"></i>Retrieved Vector Chunks</div>
+                        <div id="resDocsList"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="glass-card p-4 h-100">
+                        <div class="section-title"><i class="bi bi-bookmark-check text-warning"></i>Citations & Provenance</div>
+                        <div id="resCitationsList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standard JSON Output Accordion -->
+            <div class="glass-card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="section-title mb-0"><i class="bi bi-code-slash text-cyan" style="color:#06b6d4;"></i>Structured RAG Response JSON</div>
+                    <button class="btn btn-sm btn-outline-secondary text-light" onclick="copyJson()"><i class="bi bi-clipboard me-1"></i>Copy JSON</button>
+                </div>
+                <pre class="json-box mb-0" id="resJson"></pre>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentResponseJson = null;
+
+        function loadQuery(q) {
+            document.getElementById('userQuery').value = q;
+            runRetrieval();
+        }
+
+        async function runRetrieval() {
+            const query = document.getElementById('userQuery').value;
+            if (!query || !query.trim()) {
+                alert("Please enter a question.");
+                return;
+            }
+
+            document.getElementById('loadingSpinner').classList.remove('d-none');
+            document.getElementById('retrievalResult').classList.add('d-none');
+            document.getElementById('searchBtn').disabled = true;
+
+            try {
+                const res = await fetch('/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await res.json();
+                currentResponseJson = data;
+
+                if (data.status !== 'success') {
+                    throw new Error(data.reason || 'Retrieval failed');
+                }
+
+                renderResult(data);
+
+                document.getElementById('loadingSpinner').classList.add('d-none');
+                document.getElementById('retrievalResult').classList.remove('d-none');
+            } catch (err) {
+                alert("Retrieval Error: " + err.message);
+                document.getElementById('loadingSpinner').classList.add('d-none');
+            } finally {
+                document.getElementById('searchBtn').disabled = false;
+            }
+        }
+
+        function renderResult(data) {
+            document.getElementById('resConfidence').innerText = `Confidence: ${data.confidence || 'Low'}`;
+            document.getElementById('resTimeMs').innerText = `Processed in ${data.processing_time_ms || 0} ms`;
+            document.getElementById('resAnswer').innerText = data.answer || 'No answer generated.';
+
+            // Retrieved Documents
+            const docs = data.retrieved_documents || [];
+            document.getElementById('resDocsList').innerHTML = docs.length > 0
+                ? docs.map(d => `
+                    <div class="doc-chip">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold text-light">${escapeHtml(d.document_name || 'Document')}</span>
+                            <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50">Score: ${d.similarity_score}</span>
+                        </div>
+                        <div class="small text-secondary font-monospace mt-1">ID: ${d.document_id}</div>
+                    </div>
+                `).join('')
+                : '<p class="text-secondary small">No vector documents matched similarity threshold.</p>';
+
+            // Citations
+            const cites = data.citations || [];
+            document.getElementById('resCitationsList').innerHTML = cites.length > 0
+                ? cites.map(c => `
+                    <div class="doc-chip">
+                        <div class="fw-semibold text-emerald" style="color:#34d399;"><i class="bi bi-check2-circle me-1"></i>${escapeHtml(c.document || 'Document')}</div>
+                        <div class="small text-secondary font-monospace mt-1">Chunk ID: ${c.chunk || ''}</div>
+                    </div>
+                `).join('')
+                : '<p class="text-secondary small">No citations available.</p>';
+
+            document.getElementById('resJson').innerText = JSON.stringify(data, null, 2);
+        }
+
+        function copyJson() {
+            if (!currentResponseJson) return;
+            navigator.clipboard.writeText(JSON.stringify(currentResponseJson, null, 2));
+            alert("JSON response copied to clipboard!");
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+    </script>
+</body>
+</html>

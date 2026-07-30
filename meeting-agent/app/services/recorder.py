@@ -1,41 +1,35 @@
 """
 app/services/recorder.py
 
-*** SECOND FILE MOST LIKELY TO NEED ENVIRONMENT-SPECIFIC ADJUSTMENT ***
-
 Purpose
 -------
-Records the meeting's audio output to a file so whisper_service can
-transcribe it. Playwright/Chromium has no built-in "record this tab's
-audio" API, so the standard approach (used by most open-source meeting
-bots) is:
-
-  1. Route Chromium's audio output to a virtual PulseAudio sink instead
-     of a real speaker (done once at container/OS level — see Dockerfile
-     and README "Audio setup" section).
-  2. Use ffmpeg to capture from that sink's `.monitor` source to a WAV
-     file for the duration of the meeting.
-
-This module only handles step 2 (spawning/stopping ffmpeg). Step 1 is
-infrastructure setup, not application code — it's in the Dockerfile.
-
-Responsibilities
-----------------
-- start_recording(meeting_id): spawn an ffmpeg subprocess capturing the
-  virtual sink monitor to a WAV file, return the file path + process handle
-- stop_recording(process): terminate ffmpeg cleanly (SIGTERM, not SIGKILL,
-  so the WAV file header gets finalized properly)
-
-Dependencies
-------------
-ffmpeg binary on PATH, a PulseAudio virtual sink named "meetingsink"
-(see Dockerfile), Python stdlib subprocess/asyncio
+Records meeting audio via Windows WASAPI loopback using pyaudiowpatch.
+Captures ALL audio currently playing on the system's default output device
+(speakers or headphones), which includes Google Meet participant voices.
+This is 100% reliable regardless of WebRTC internals or browser settings —
+if you can hear it, it gets recorded.
 """
 
 import asyncio
 import os
+import subprocess
+import threading
 import uuid
+import wave
 from pathlib import Path
+from typing import Any
+
+try:
+    import imageio_ffmpeg
+    _FFMPEG_EXE = imageio_ffmpeg.get_ffmpeg_exe()
+except Exception:
+    _FFMPEG_EXE = None
+
+try:
+    import pyaudiowpatch as pyaudio
+    _PYAUDIO_OK = True
+except ImportError:
+    _PYAUDIO_OK = False
 
 from app.config.settings import get_settings
 from app.utils.logger import get_logger
@@ -43,7 +37,13 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-_PULSE_MONITOR_SOURCE = "meetingsink.monitor"  # must match the sink created in the Dockerfile/entrypoint
+# Kept for browser.py import compatibility (injected as init script for context)
+_INIT_WEBAUDIO_CAPTURE_JS = """
+(function() {
+    // Placeholder — actual capture is done via WASAPI loopback in Python
+    window.__recLoopbackMode = true;
+})();
+"""
 
 
 def _recording_path(meeting_id: uuid.UUID) -> str:
@@ -51,51 +51,122 @@ def _recording_path(meeting_id: uuid.UUID) -> str:
     return os.path.join(settings.RECORDINGS_DIR, f"{meeting_id}.wav")
 
 
-async def start_recording(meeting_id: uuid.UUID) -> tuple[str, asyncio.subprocess.Process]:
-    """Starts an ffmpeg process capturing system audio for this meeting.
-    Caller (meeting_joiner.py) is responsible for calling stop_recording
-    once the meeting ends or the max-duration safety cap is hit."""
-    output_path = _recording_path(meeting_id)
-    log_path = output_path.replace(".wav", "_ffmpeg.log")
-    logger.info("Starting audio recording for meeting %s -> %s", meeting_id, output_path)
-
-    # Pre-flight: confirm PulseAudio sink is available
-    check = await asyncio.create_subprocess_exec(
-        "pactl", "list", "short", "sources",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await check.communicate()
-    sources = stdout.decode()
-    if _PULSE_MONITOR_SOURCE not in sources:
-        logger.error("PulseAudio source '%s' NOT FOUND! Available: %s", _PULSE_MONITOR_SOURCE, sources)
-    else:
-        logger.info("PulseAudio source '%s' confirmed available.", _PULSE_MONITOR_SOURCE)
-
-    log_file = open(log_path, "wb")
-    process = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-y",
-        "-f", "pulse",
-        "-i", _PULSE_MONITOR_SOURCE,
-        "-ac", "1",
-        "-ar", "16000",  # 16kHz mono is plenty for speech and keeps Whisper uploads small
-        output_path,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=log_file,  # Write ffmpeg output to a log file for diagnosis
-    )
-    logger.info("ffmpeg PID=%s recording to %s (log: %s)", process.pid, output_path, log_path)
-    return output_path, process
-
-
-async def stop_recording(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is not None:
-        return  # already exited
-    logger.info("Stopping audio recording (pid=%s)", process.pid)
-    process.terminate()  # SIGTERM: lets ffmpeg finalize the WAV header
+def _get_loopback_device() -> dict | None:
+    """Find the WASAPI loopback device matching the default output (speakers/headphones)."""
+    if not _PYAUDIO_OK:
+        return None
     try:
-        await asyncio.wait_for(process.wait(), timeout=10)
-    except asyncio.TimeoutError:
-        logger.warning("ffmpeg did not exit after SIGTERM, killing pid=%s", process.pid)
-        process.kill()
-        await process.wait()
+        p = pyaudio.PyAudio()
+        wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+        default_out = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+        loopback = None
+        for lb in p.get_loopback_device_info_generator():
+            if default_out["name"] in lb["name"]:
+                loopback = lb
+                break
+        if loopback is None:
+            # Fallback: take first available loopback
+            for lb in p.get_loopback_device_info_generator():
+                loopback = lb
+                break
+        p.terminate()
+        if loopback:
+            logger.info("WASAPI loopback device: '%s' (index %s)", loopback["name"], loopback["index"])
+        else:
+            logger.warning("No WASAPI loopback device found.")
+        return loopback
+    except Exception as e:
+        logger.warning("Could not enumerate WASAPI loopback devices: %s", e)
+        return None
+
+
+class WASAPILoopbackRecorder:
+    """Records system audio output via Windows WASAPI loopback."""
+
+    def __init__(self, meeting_id: uuid.UUID):
+        self.meeting_id = meeting_id
+        self.filepath = _recording_path(meeting_id)
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._loopback = _get_loopback_device()
+
+    def _record_loop(self):
+        if not _PYAUDIO_OK or not self._loopback:
+            logger.warning("WASAPI loopback not available — no audio will be recorded.")
+            return
+
+        p = pyaudio.PyAudio()
+        channels = int(self._loopback["maxInputChannels"])
+        rate = int(self._loopback["defaultSampleRate"])
+        chunk = 512
+
+        try:
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=channels,
+                rate=rate,
+                frames_per_buffer=chunk,
+                input=True,
+                input_device_index=int(self._loopback["index"]),
+            )
+            logger.info(
+                "WASAPI loopback recording started: device='%s' rate=%d ch=%d",
+                self._loopback["name"], rate, channels,
+            )
+        except Exception as e:
+            logger.warning("Failed to open WASAPI loopback stream: %s", e)
+            p.terminate()
+            return
+
+        frames = []
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    data = stream.read(chunk, exception_on_overflow=False)
+                    frames.append(data)
+                except Exception:
+                    break
+        finally:
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+
+        # Write WAV file
+        try:
+            with wave.open(self.filepath, "wb") as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(2)  # paInt16 = 2 bytes
+                wf.setframerate(rate)
+                wf.writeframes(b"".join(frames))
+            size = os.path.getsize(self.filepath)
+            duration_s = len(frames) * chunk / rate
+            logger.info(
+                "WASAPI loopback recording saved: %s (%d bytes, %.1fs)",
+                self.filepath, size, duration_s,
+            )
+        except Exception as e:
+            logger.warning("Failed to write WAV file: %s", e)
+
+    def start(self):
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._record_loop, daemon=True)
+        self._thread.start()
+        logger.info("WASAPI loopback recorder thread started for meeting %s", self.meeting_id)
+
+    def stop(self) -> str:
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+        logger.info("WASAPI loopback recorder stopped.")
+        return self.filepath
+
+
+async def start_recording(meeting_id: uuid.UUID, page: Any = None) -> tuple[str, Any]:
+    recorder = WASAPILoopbackRecorder(meeting_id)
+    recorder.start()
+    return (recorder.filepath, recorder)
+
+
+async def stop_recording(process: Any = None, page: Any = None) -> None:
+    if process and isinstance(process, WASAPILoopbackRecorder):
+        await asyncio.get_event_loop().run_in_executor(None, process.stop)

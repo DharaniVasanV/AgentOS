@@ -1,0 +1,37 @@
+[
+  {
+    "status": "success",
+    "notification_id": "efed4c1a-b588-4a6e-83d2-7a4f264065b0",
+    "user_id": "dharanivasan",
+    "user_email": "santhosh.ap2024csbs@sece.ac.in",
+    "title": "New Autonomous AI Developer Role Match",
+    "description": "Career Agent scored candidate profile ATS score: 92%. Recommended application deadline in 3 days.",
+    "category": "Career Agent",
+    "priority": "Emergency",
+    "channels": [
+      "Dashboard",
+      "Browser",
+      "Email"
+    ],
+    "sound": {
+      "type": "System",
+      "name": "Bell",
+      "url": "/static/sounds/bell.mp3"
+    },
+    "sound_name": "Bell",
+    "actions": [
+      "Open Dashboard",
+      "Dismiss"
+    ],
+    "action_url": "http://127.0.0.1:8002",
+    "event_time": "2026-07-30T10:49:10.858368",
+    "scheduled_time": "2026-07-30T10:49:10.858368",
+    "delivered_time": "2026-07-30 10:49:10",
+    "reminder_schedule": "Execute Schedule",
+    "delivery_status": "Delivered",
+    "read_time": null,
+    "dismiss_time": null,
+    "created_at": "2026-07-30T10:49:10.859566",
+    "last_escalated_at": "2026-07-30T10:54:16.325385"
+  }
+]

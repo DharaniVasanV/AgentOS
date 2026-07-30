@@ -21,11 +21,18 @@ meeting_joiner.py -> join_meeting(meeting_url, platform, bot_name)
 """
 
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext, Playwright
-from pyvirtualdisplay import Display
 
+try:
+    from pyvirtualdisplay import Display
+except ImportError:
+    Display = None
+
+from app.services import recorder
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+from typing import Any
 
 # Tracks the Playwright driver instance behind each Browser so leave_meeting()
 # can stop it (browser.close() alone does not stop the driver subprocess).
@@ -35,77 +42,85 @@ _active_playwrights: dict[int, Playwright] = {}
 # stop it. We run headed-under-Xvfb rather than headless because Google's
 # properties actively fingerprint headless Chromium and gate anonymous guest
 # access behind a sign-in wall when they detect it.
-_active_displays: dict[int, Display] = {}
+_active_displays: dict[int, Any] = {}
 
 # Reused selectors
-_IN_CALL_SELECTOR = '[aria-label*="Leave call" i], [aria-label*="Leave" i], button[jsname="CQeAdf"]'
+_IN_CALL_SELECTOR = '[aria-label*="Leave call" i], [aria-label*="Leave" i], [aria-label*="hang up" i], button[jsname="CQeAdf"], button[jsname="CQylEf"]'
 _DENIED_TEXT_SELECTOR = 'text=/denied your request|can.?t join this call|removed you from the call|no longer available/i'
 _INVALID_MEETING_SELECTOR = 'text=/check your meeting code|misspelled or the meeting has ended|invalid meeting/i'
 
 
 async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
-    display = Display(visible=0, size=(1280, 720))
-    try:
-        display.start()
-    except Exception as ex:
-        raise RuntimeError(
-            "Failed to start Xvfb virtual display. Make sure the 'xvfb' system "
-            "package is installed in this image."
-        ) from ex
+    import sys
+    import os
+    import base64
+
+    display = None
+    if sys.platform != "win32":
+        try:
+            display = Display(visible=0, size=(1280, 720))
+            display.start()
+        except Exception as ex:
+            logger.warning("Xvfb display not running (continuing without virtual display): %s", ex)
 
     playwright = await async_playwright().start()
     browser = None
     try:
-        browser = await playwright.chromium.launch(
-            headless=False,  # headed-under-Xvfb — see note on _active_displays above
+        launch_kwargs = dict(
+            headless=False,
             args=[
-                "--use-fake-ui-for-media-stream",      # auto-accept mic/camera permission prompt
-                "--use-fake-device-for-media-stream",  # provide a fake capture device so getUserMedia succeeds
+                # Accepts mic/camera permission prompts silently (does NOT fake the actual device)
+                "--use-fake-ui-for-media-stream",
+                # Allow media autoplay without user gesture (needed for Google Meet audio)
+                "--autoplay-policy=no-user-gesture-required",
+                "--no-user-gesture-required",
+                # Anti-bot evasion
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--autoplay-policy=no-user-gesture-required",
                 "--disable-features=WebRtcHideLocalIpsWithMdns",
             ],
         )
+        try:
+            browser = await playwright.chromium.launch(channel="chrome", **launch_kwargs)
+        except Exception:
+            browser = await playwright.chromium.launch(**launch_kwargs)
 
-        import os
-        import base64
-        _SESSION_FILE = "/app/google_session.json"
-        
-        # Decode session from env var
+        # Cross-platform location for google_session.json
+        session_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "google_session.json"))
+
+        # Decode session from env var if present
         session_b64 = os.environ.get("GOOGLE_SESSION_B64")
         if session_b64:
             try:
-                with open(_SESSION_FILE, "wb") as f:
+                with open(session_file, "wb") as f:
                     f.write(base64.b64decode(session_b64))
                 logger.info("Decoded Google Session from GOOGLE_SESSION_B64 env var.")
             except Exception:
                 logger.exception("Failed to decode GOOGLE_SESSION_B64.")
-        
-        if session_b64 and os.path.exists(_SESSION_FILE):
-            logger.info("Starting browser with authenticated bot session.")
+
+        if os.path.exists(session_file):
+            logger.info("Starting browser with authenticated bot session (%s).", session_file)
             context = await browser.new_context(
-                storage_state=_SESSION_FILE,
+                storage_state=session_file,
                 permissions=["camera", "microphone"],
                 viewport={"width": 1280, "height": 720},
                 locale="en-US",
             )
         else:
-            logger.info("Starting browser in anonymous guest mode (no valid session provided).")
-            # Always a clean, unauthenticated context — anonymous guest join only.
+            logger.info("Starting browser in anonymous guest mode (no google_session.json found).")
             context = await browser.new_context(
                 permissions=["camera", "microphone"],
                 viewport={"width": 1280, "height": 720},
                 locale="en-US",
             )
 
-        # Mask webdriver flag
+        # Mask webdriver flag & inject pre-load WebAudio AudioNode interceptor
         await context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
         )
-
+        await context.add_init_script(recorder._INIT_WEBAUDIO_CAPTURE_JS)
         page = await context.new_page()
 
         # Apply playwright-stealth if available
@@ -116,14 +131,16 @@ async def launch_browser() -> tuple[Browser, BrowserContext, Page]:
             pass
 
         _active_playwrights[id(browser)] = playwright
-        _active_displays[id(browser)] = display
+        if display:
+            _active_displays[id(browser)] = display
         return browser, context, page
 
     except Exception:
         if browser is not None:
             await browser.close()
         await playwright.stop()
-        display.stop()
+        if display:
+            display.stop()
         raise
 
 
@@ -184,6 +201,26 @@ async def _join_google_meet(page: Page, meeting_url: str, bot_name: str) -> bool
                     await pop.first.click(force=True, timeout=2000)
             except Exception:
                 pass
+
+        # --- Step 2.5: Ensure Mic and Camera are muted before joining ---
+        logger.info("Ensuring microphone and camera are muted before joining...")
+
+        for device in ["microphone", "camera"]:
+            try:
+                off_btn = page.locator(
+                    f'button[aria-label*="Turn off {device}" i], '
+                    f'div[role="button"][aria-label*="Turn off {device}" i], '
+                    f'button[data-tooltip*="Turn off {device}" i]'
+                ).first
+
+                if await off_btn.count() > 0 and await off_btn.is_visible():
+                    logger.info("%s is currently ON — clicking to turn OFF...", device.capitalize())
+                    await off_btn.click(timeout=2000)
+                    await page.wait_for_timeout(300)
+                else:
+                    logger.info("%s is ALREADY OFF (no turn-off button detected).", device.capitalize())
+            except Exception as ex:
+                logger.warning("Could not check %s mute state: %s", device, ex)
 
         # --- Step 2: Fill guest name if prompted (unlocks the Join button) ---
         await page.wait_for_timeout(2000)
@@ -377,16 +414,151 @@ async def leave_meeting(browser: Browser | None) -> None:
             display.stop()
 
 
+async def ensure_muted(page: Page | None) -> None:
+    """Checks in-meeting controls and turns off microphone and camera if they are on."""
+    if not page or page.is_closed():
+        return
+    try:
+        for device in ["microphone", "camera"]:
+            off_btn = page.locator(
+                f'button[aria-label*="Turn off {device}" i], '
+                f'button[data-tooltip*="Turn off {device}" i]'
+            ).first
+            if await off_btn.count() > 0 and await off_btn.is_visible():
+                logger.info("In-call %s detected as ON — muting immediately...", device.capitalize())
+                await off_btn.click(timeout=1000)
+    except Exception:
+        pass
+
+
 async def is_meeting_active(page: Page | None, platform: str) -> bool:
     if not page or page.is_closed():
         return False
     try:
         if platform == "google_meet":
-            return await page.locator(_IN_CALL_SELECTOR).count() > 0
-        elif platform == "zoom":
-            return await page.locator('button[aria-label*="leave" i]').count() > 0
+            url = (page.url or "").lower()
+            if "landing" in url or (url.startswith("https://meet.google.com") and len(url.rstrip("/").split("/")) <= 3):
+                return False
+
+            import time
+            if not hasattr(page, "_joined_timestamp"):
+                setattr(page, "_joined_timestamp", time.time())
+
+            elapsed_since_join = time.time() - getattr(page, "_joined_timestamp", time.time())
+
+            try:
+                ended = await page.evaluate('''() => {
+                    try {
+                        let text = document.body ? document.body.innerText.toLowerCase() : "";
+                        if (text.includes("return to home screen") || 
+                            text.includes("ended this meeting") || 
+                            text.includes("ended the call") ||
+                            text.includes("has ended") ||
+                            text.includes("call ended") ||
+                            text.includes("you left the meeting") || 
+                            text.includes("you've left") ||
+                            text.includes("someone removed you") ||
+                            text.includes("you've been removed") ||
+                            text.includes("everyone else has left") ||
+                            text.includes("no one else is in this call") ||
+                            text.includes("no one else is here") ||
+                            text.includes("you're the only one here") ||
+                            text.includes("only one here")) {
+                            return true;
+                        }
+                        return false;
+                    } catch(e) {
+                        return false;
+                    }
+                }''')
+                if ended:
+                    logger.info("Host ended call or left meeting. Exiting bot.")
+                    return False
+
+                # After 15 seconds of call stabilization, check if bot is left alone
+                if elapsed_since_join > 15:
+                    is_alone = await page.evaluate('''() => {
+                        try {
+                            let nodes = document.querySelectorAll('[data-participant-id], [data-requested-participant-id]');
+                            let ids = new Set([...nodes].map(el => el.getAttribute('data-participant-id') || el.getAttribute('data-requested-participant-id')).filter(Boolean));
+                            return ids.size === 1;
+                        } catch(e) {
+                            return false;
+                        }
+                    }''')
+                    if is_alone:
+                        logger.info("Host/participants left meeting (bot is alone). Exiting bot.")
+                        return False
+            except Exception:
+                pass
+            return True
         elif platform == "teams":
             return await page.locator('[data-tid="hangup-leave-button"]').count() > 0
     except Exception:
         pass
     return False
+
+
+async def connect_bot_session() -> str:
+    """Launches headed Chrome for user to sign into Google, automatically detects login,
+    saves storage_state to google_session.json, and closes browser without terminal prompt."""
+    import os
+    import base64
+    import asyncio
+    from playwright.async_api import async_playwright
+
+    session_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "google_session.json"))
+
+    async with async_playwright() as p:
+        browser = None
+        try:
+            browser = await p.chromium.launch(headless=False, channel="chrome", args=["--disable-blink-features=AutomationControlled"])
+        except Exception:
+            try:
+                browser = await p.chromium.launch(headless=False, channel="msedge", args=["--disable-blink-features=AutomationControlled"])
+            except Exception:
+                browser = await p.chromium.launch(headless=False, args=["--disable-blink-features=AutomationControlled"])
+
+        context = await browser.new_context(viewport={"width": 1280, "height": 720}, locale="en-US")
+        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
+        page = await context.new_page()
+
+        try:
+            from playwright_stealth import stealth_async
+            await stealth_async(page)
+        except ImportError:
+            pass
+
+        logger.info("Opening headed Chrome for bot Google sign-in...")
+        await page.goto("https://accounts.google.com/signin")
+
+        # Poll up to 180 seconds until sign in finishes or window closes
+        for _ in range(180):
+            await asyncio.sleep(1)
+            if page.is_closed():
+                break
+            try:
+                cookies = await context.cookies()
+                cookie_names = [c.get("name", "") for c in cookies]
+                if any(k in cookie_names for k in ["SID", "HSID", "SSID"]) and ("myaccount.google.com" in page.url or "google.com" in page.url):
+                    logger.info("Detected successful Google sign-in!")
+                    await asyncio.sleep(1.5)
+                    break
+            except Exception:
+                pass
+
+        os.makedirs(os.path.dirname(session_file), exist_ok=True)
+        await context.storage_state(path=session_file)
+
+        if not page.is_closed():
+            await page.close()
+        await browser.close()
+
+        try:
+            with open(session_file, "rb") as f:
+                os.environ["GOOGLE_SESSION_B64"] = base64.b64encode(f.read()).decode("utf-8")
+        except Exception:
+            pass
+
+        logger.info("Saved Google session to %s", session_file)
+        return session_file

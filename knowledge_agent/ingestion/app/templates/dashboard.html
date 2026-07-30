@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Ingestion Service - AgentOS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #050b14;
+            --card-bg: rgba(15, 23, 42, 0.8);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-cyan: #0ea5e9;
+            --accent-violet: #8b5cf6;
+            --accent-emerald: #10b981;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+        }
+
+        body {
+            background: linear-gradient(135deg, #030712 0%, #0f172a 50%, #0c1a30 100%);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            min-height: 100vh;
+            padding-bottom: 3rem;
+        }
+
+        .navbar {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .brand-logo {
+            background: linear-gradient(135deg, #38bdf8, #a78bfa);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        .btn-gradient {
+            background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
+            color: white;
+            border: none;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 0.6rem 1.5rem;
+            transition: all 0.2s ease;
+        }
+        .btn-gradient:hover {
+            background: linear-gradient(135deg, #0284c7, #7c3aed);
+            color: white;
+            box-shadow: 0 4px 20px rgba(14, 165, 233, 0.4);
+        }
+
+        .input-area {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            border-radius: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+        .input-area:focus {
+            background: rgba(15, 23, 42, 0.9);
+            border-color: var(--accent-cyan);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.25);
+        }
+
+        .badge-type {
+            background: rgba(14, 165, 233, 0.2);
+            color: #38bdf8;
+            border: 1px solid rgba(14, 165, 233, 0.4);
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .stat-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #38bdf8;
+        }
+
+        .json-box {
+            background: #030712;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            max-height: 450px;
+            overflow-y: auto;
+            color: #38bdf8;
+        }
+
+        .content-box {
+            background: #030712;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+            color: #f1f5f9;
+            white-space: pre-wrap;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg sticky-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+                <i class="bi bi-database-check fs-3" style="color: #38bdf8;"></i>
+                <span class="brand-logo">AgentOS &bull; Knowledge Ingestion Service</span>
+            </a>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                <button class="btn btn-outline-secondary text-light btn-sm" onclick="openHistoryModal()">
+                    <i class="bi bi-journal-text me-1"></i> Knowledge Base Explorer
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container mt-4">
+
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h2 class="fw-bold"><i class="bi bi-layers-half me-2" style="color: #38bdf8;"></i>Vector Knowledge Ingestion & Memory Building</h2>
+            <p class="text-secondary">Ingest Email, Meeting Transcripts, PDF Text, Research Reports, Resumes, or Notes into AgentOS Vector Database.</p>
+        </div>
+
+        <!-- Input Box -->
+        <div class="glass-card p-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label text-light fw-semibold mb-0"><i class="bi bi-file-text me-2 text-info"></i>Document Content Input</label>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary text-light btn-sm" onclick="loadSample('meeting')">Sample Meeting</button>
+                    <button class="btn btn-outline-secondary text-light btn-sm" onclick="loadSample('research')">Sample Research</button>
+                    <button class="btn btn-outline-secondary text-light btn-sm" onclick="loadSample('resume')">Sample Resume</button>
+                </div>
+            </div>
+            <textarea class="form-control input-area mb-3" id="rawContent" rows="7" placeholder="Paste document content, transcript, report, email, rulebook, or notes..."></textarea>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="text-secondary small" id="charCount">0 characters</span>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary" id="sourceAgent" style="width: auto;">
+                        <option value="Manual Upload">Source: Manual Upload</option>
+                        <option value="Research Agent">Source: Research Agent</option>
+                        <option value="Meeting Agent">Source: Meeting Agent</option>
+                        <option value="Career Agent">Source: Career Agent</option>
+                    </select>
+                </div>
+                <button class="btn btn-gradient" id="ingestBtn" onclick="runIngestion()">
+                    <i class="bi bi-cpu me-1"></i> Chunk, Embed & Store in Vector DB
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div class="text-center py-5 d-none" id="loadingSpinner">
+            <div class="spinner-border text-info mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+            <h5 class="fw-bold text-light">Executing 9-Step Knowledge Ingestion Pipeline...</h5>
+            <p class="text-secondary small">Cleaning text, generating metadata, 700-word semantic chunking, 384d vector embedding & ChromaDB storage...</p>
+        </div>
+
+        <!-- Ingestion Result -->
+        <div class="d-none" id="ingestionResult">
+            
+            <!-- Result Banner & Stats -->
+            <div class="glass-card p-4 mb-4">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2 rounded-pill me-2">
+                            <i class="bi bi-check-circle me-1"></i> STATUS: SUCCESS
+                        </span>
+                        <span class="badge-type" id="resDocType">Meeting Transcript</span>
+                        <h4 class="fw-bold mt-2 mb-1" id="resDocTitle">Document Title</h4>
+                        <div class="small text-secondary font-monospace" id="resDocId">ID: uuid</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 px-3 py-2 rounded-pill">
+                            <i class="bi bi-clock me-1"></i> Processed in <span id="resTimeMs">0</span> ms
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Metrics Grid -->
+                <div class="row g-3 mt-2">
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-number" id="resChunks">0</div>
+                            <div class="small text-secondary fw-semibold mt-1">Chunks Created (700w)</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-number text-purple" style="color:#a78bfa;" id="resEmbeddings">0</div>
+                            <div class="small text-secondary fw-semibold mt-1">Embeddings Generated (384d)</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-number text-emerald" style="color:#34d399;"><i class="bi bi-check-lg me-1"></i>True</div>
+                            <div class="small text-secondary fw-semibold mt-1">Vector DB Updated</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-number text-info"><i class="bi bi-check-lg me-1"></i>True</div>
+                            <div class="small text-secondary fw-semibold mt-1">Metadata Indexed</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standard Response JSON Accordion -->
+            <div class="glass-card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="section-title mb-0"><i class="bi bi-code-slash text-cyan" style="color:#38bdf8;"></i>Standard Pipeline Response JSON</div>
+                    <button class="btn btn-sm btn-outline-secondary text-light" onclick="copyJson()"><i class="bi bi-clipboard me-1"></i>Copy JSON</button>
+                </div>
+                <pre class="json-box mb-0" id="resJson"></pre>
+            </div>
+        </div>
+
+        <!-- Knowledge Base Explorer Modal -->
+        <div class="modal fade" id="historyModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content glass-card" style="background:#0f172a;">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title fw-bold"><i class="bi bi-journal-text me-2 text-info"></i>AgentOS Vector Knowledge Base</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="historyList" class="d-flex flex-column gap-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Full Document Detail Viewer Modal -->
+        <div class="modal fade" id="docDetailModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <div class="modal-content glass-card" style="background:#0f172a;">
+                    <div class="modal-header border-secondary">
+                        <div>
+                            <span class="badge-type mb-1 d-inline-block" id="detailType">Document</span>
+                            <h5 class="modal-title fw-bold text-light" id="detailTitle">Document Title</h5>
+                            <div class="small text-secondary font-monospace" id="detailId">ID: uuid</div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="section-title"><i class="bi bi-file-earmark-text text-info"></i>Full Text Content</div>
+                        <div class="content-box mb-3" id="detailContent">Loading content...</div>
+
+                        <div class="section-title"><i class="bi bi-code-square text-warning"></i>Indexed Metadata JSON</div>
+                        <pre class="json-box mb-0" id="detailMetaJson"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentResponseJson = null;
+        let historyModalObj = null;
+        let detailModalObj = null;
+
+        document.getElementById('rawContent').addEventListener('input', (e) => {
+            document.getElementById('charCount').innerText = `${e.target.value.length} characters`;
+        });
+
+        const samples = {
+            meeting: `Meeting Title: AgentOS Vector Architecture & Knowledge Agent Ingestion Sync\nDate: July 29, 2026\nAttendees: Dharani Vasan, Mahesh Kumar, Senior AI Engineer\n\nDiscussion Points:\n1. Knowledge Ingestion Pipeline: Must execute 9 steps cleanly: Detect type, extract plain text, generate metadata, generate semantic tags (5-20), keywords (max 40), chunk document (700 words target, 120 words overlap), generate 384d vector embeddings, store in ChromaDB and PostgreSQL, verify indexing.\n2. Independent Microservices: Meeting Agent (8000), Research Agent (8001), Career Agent (8002), Knowledge Ingestion Service (8003).\n3. Groq API 3 Integration: Using Groq llama-3.3-70b-versatile for metadata and semantic tagging.`,
+            research: `Research Report: Autonomous Agent Memory Systems and Vector Embeddings\nAuthor: Research Agent\n\nOverview:\nModern AI agents require multi-tiered memory architectures combining short-term contextual working memory with long-term vector embeddings stored in persistent stores like ChromaDB or Qdrant. Semantic chunking with optimal overlap ensures contextual continuity across large documents.`,
+            resume: `Candidate Name: Dharani Vasan\nEducation: B.E. Computer Science and Engineering (2026)\nSkills: Python, FastAPI, Docker, PostgreSQL, Groq API, ChromaDB, Playwright, Whisper\nProjects: AgentOS Multi-Agent Productivity Suite (Meeting Agent, Research Agent, Career Agent, Knowledge Ingestion Service).`
+        };
+
+        function loadSample(type) {
+            document.getElementById('rawContent').value = samples[type] || '';
+            document.getElementById('charCount').innerText = `${document.getElementById('rawContent').value.length} characters`;
+        }
+
+        async function runIngestion() {
+            const content = document.getElementById('rawContent').value;
+            const sourceAgent = document.getElementById('sourceAgent').value;
+
+            if (!content || !content.trim()) {
+                alert("Please enter document content to ingest.");
+                return;
+            }
+
+            document.getElementById('loadingSpinner').classList.remove('d-none');
+            document.getElementById('ingestionResult').classList.add('d-none');
+            document.getElementById('ingestBtn').disabled = true;
+
+            try {
+                const res = await fetch('/ingest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: content,
+                        source_agent: sourceAgent,
+                        user_id: 'user_default'
+                    })
+                });
+
+                const data = await res.json();
+                currentResponseJson = data;
+
+                if (data.status !== 'success') {
+                    throw new Error(data.reason || 'Ingestion failed');
+                }
+
+                renderResult(data);
+
+                document.getElementById('loadingSpinner').classList.add('d-none');
+                document.getElementById('ingestionResult').classList.remove('d-none');
+            } catch (err) {
+                alert("Ingestion Error: " + err.message);
+                document.getElementById('loadingSpinner').classList.add('d-none');
+            } finally {
+                document.getElementById('ingestBtn').disabled = false;
+            }
+        }
+
+        function renderResult(data) {
+            document.getElementById('resDocType').innerText = data.document_type || 'Unknown';
+            document.getElementById('resDocId').innerText = `Document ID: ${data.document_id}`;
+            document.getElementById('resTimeMs').innerText = data.processing_time_ms || 0;
+            document.getElementById('resChunks').innerText = data.chunks_created || 0;
+            document.getElementById('resEmbeddings').innerText = data.embeddings_created || 0;
+            document.getElementById('resDocTitle').innerText = `${data.document_type} Ingested`;
+            document.getElementById('resJson').innerText = JSON.stringify(data, null, 2);
+        }
+
+        function copyJson() {
+            if (!currentResponseJson) return;
+            navigator.clipboard.writeText(JSON.stringify(currentResponseJson, null, 2));
+            alert("JSON response copied to clipboard!");
+        }
+
+        function openHistoryModal() {
+            if (!historyModalObj) {
+                historyModalObj = new bootstrap.Modal(document.getElementById('historyModal'));
+            }
+            historyModalObj.show();
+            fetchHistoryList();
+        }
+
+        async function fetchHistoryList() {
+            document.getElementById('historyList').innerHTML = '<p class="text-secondary text-center py-3">Loading Knowledge Base documents...</p>';
+
+            try {
+                const res = await fetch('/documents');
+                const list = await res.json();
+                if (!list || list.length === 0) {
+                    document.getElementById('historyList').innerHTML = '<p class="text-secondary text-center py-3">No documents in Knowledge Base yet.</p>';
+                    return;
+                }
+
+                document.getElementById('historyList').innerHTML = list.map(item => `
+                    <div class="glass-card p-3 d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge-type mb-1 d-inline-block">${escapeHtml(item.document_type || 'Document')}</span>
+                            <h6 class="fw-bold mb-0 text-light">${escapeHtml(item.title || 'Untitled Document')}</h6>
+                            <div class="small text-secondary">ID: ${item.id} | Chunks: ${item.chunk_count || 1} | Source: ${item.source_agent || 'Manual'}</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-sm btn-outline-info text-light" onclick="viewDocItem('${item.id}')">
+                                <i class="bi bi-eye me-1"></i> View Full Content
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteDocItem('${item.id}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                document.getElementById('historyList').innerHTML = '<p class="text-danger text-center py-3">Error loading documents.</p>';
+            }
+        }
+
+        async function viewDocItem(id) {
+            if (!detailModalObj) {
+                detailModalObj = new bootstrap.Modal(document.getElementById('docDetailModal'));
+            }
+            
+            document.getElementById('detailTitle').innerText = 'Loading...';
+            document.getElementById('detailContent').innerText = 'Loading content...';
+            document.getElementById('detailMetaJson').innerText = '';
+            
+            detailModalObj.show();
+
+            try {
+                const res = await fetch(`/documents/${id}`);
+                const data = await res.json();
+                
+                document.getElementById('detailType').innerText = data.document_type || 'Document';
+                document.getElementById('detailTitle').innerText = data.title || 'Knowledge Document';
+                document.getElementById('detailId').innerText = `ID: ${data.id}`;
+                document.getElementById('detailContent').innerText = data.raw_content || data.clean_content || 'No text content available.';
+                document.getElementById('detailMetaJson').innerText = JSON.stringify(data.metadata_json || {}, null, 2);
+            } catch (err) {
+                document.getElementById('detailContent').innerText = "Failed to load document content.";
+            }
+        }
+
+        async function deleteDocItem(id) {
+            if (!confirm("Are you sure you want to remove this document and its vectors from the Knowledge Base?")) return;
+            try {
+                await fetch(`/documents/${id}`, { method: 'DELETE' });
+                fetchHistoryList();
+            } catch (err) {
+                alert("Failed to delete document.");
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+    </script>
+</body>
+</html>
